@@ -48,7 +48,7 @@ Connects to a host, authenticates and logs in. Runs self-tests on first use. Asy
 
 **Returns:** `Session`
 
-**Errors:** `invalidArgument`, `timeout`, `transportFailed`, `handshakeFailed`, `versionMismatch`, `suiteMismatch`, `peerIdentityChanged`, `peerRevoked`, `authenticationFailed`, `mfaRequired`, `rateLimited`, `notEnrolled`, `keyStoreUnavailable`, `selfTestFailed`, `integrityCheckFailed`, `auditUnavailable`
+**Errors:** `invalidArgument`, `timeout`, `transportFailed`, `handshakeFailed`, `versionMismatch`, `suiteMismatch`, `peerRevoked`, `authenticationFailed`, `mfaRequired`, `rateLimited`, `notEnrolled`, `keyStoreUnavailable`, `selfTestFailed`, `integrityCheckFailed`, `auditUnavailable`
 
 ### `createExternalTransport`
 
@@ -128,7 +128,7 @@ Returns a peer's identity for display. Given a safety number, compares it in con
 
 #### `Session.rotateKeys`
 
-Moves traffic keys to a new epoch in both directions, for one peer or for all. Async.
+Moves traffic keys to a new epoch in both directions, for one peer or for all. Completes when the peer has moved too. Async.
 
 | Parameter | Type | Description |
 | --- | --- | --- |
@@ -410,12 +410,13 @@ Everything needed to start a client session.
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `serverUrl` | `string` | The host's control plane, such as wss://host/qalqon. |
+| `serverUrl` | `string` | The host's control plane, such as wss://host/qalqon. Its host name must match the server's certificate. |
 | `caBundle` | `bytes` | The trusted root certificates. |
 | `keyStore` | `KeyStoreConfig` | Where this device's keys are held. |
 | `dataDir` | `string?` | The directory for pins and the audit chain. Not used on web. |
 | `relayPolicy` | `RelayPolicy?` | Defaults to preferDirect. |
 | `identityChangePolicy` | `IdentityChangePolicy?` | Defaults to block. |
+| `revocationGraceMs` | `u64?` | How long past a CRL's next update new peer sessions are still allowed. Defaults to 72 hours. This is local, and server policy cannot change it. |
 | `externalTransport` | `ExternalTransport?` | Set this where the application owns the sockets, such as in a browser. Unset, the SDK uses its built-in transports. |
 
 ### `Credentials`
@@ -454,7 +455,7 @@ Names a peer.
 | Field | Type | Description |
 | --- | --- | --- |
 | `userId` | `string` | The peer's user. |
-| `deviceId` | `string?` | A specific device. Unset, the host picks an online device. |
+| `deviceId` | `string?` | A specific device. Unset, the host picks an online device, which the pin check still applies to. |
 
 ### `PeerIdentity`
 
@@ -586,7 +587,7 @@ How far a peer's identity has been checked.
 | `unverified` | Never seen before, so nothing is pinned yet. |
 | `pinned` | Pinned on first use, and not compared out of band. |
 | `verified` | The user compared the safety number out of band. |
-| `changed` | The presented identity key differs from the pin. |
+| `changed` | The identity key differs from the pin, or this is a new device of a user who is already pinned. |
 
 ### `SessionState`
 
@@ -673,7 +674,7 @@ Something a client session reports. Adapters turn these into hooks, signals, str
 | `channelOpened` | `channelId: u16` | A channel is ready. |
 | `channelClosed` | `channelId: u16`, `clean: bool` | A channel ended. |
 | `messageAvailable` | `channelId: u16` | A channel has a message ready for receive. |
-| `peerIdentityChanged` | `peer: PeerIdentity` | A peer's identity key differs from its pin. |
+| `peerIdentityChanged` | `peer: PeerIdentity` | A peer's identity key differs from its pin, or a pinned user presented a new device. |
 | `pathChanged` | `peer: PeerRef`, `path: PathKind` | A peer's path changed. |
 | `keysRotated` | `peer: PeerRef`, `epoch: u16` | Traffic keys moved to a new epoch. |
 | `auditAlarm` | `severity: Severity`, `summary: string` | A possible breach attempt was detected. |
@@ -719,7 +720,7 @@ Something the server core asks a host to do. See docs/HOST-SPI.md.
 | 200 | `handshakeFailed` | The handshake failed. The cause is deliberately not distinguished here; the local audit log records it. |
 | 201 | `versionMismatch` | The two sides share no protocol version. |
 | 202 | `suiteMismatch` | The two sides share no cipher suite. |
-| 203 | `peerIdentityChanged` | The peer's identity key differs from its pin. |
+| 203 | `peerIdentityChanged` | The peer's identity key differs from its pin, or a user who is already pinned presented a new device. |
 | 204 | `peerRevoked` | The peer's certificate is revoked or expired. |
 | 205 | `revocationDataStale` | The local CRL is too old to allow a new session. |
 | 300 | `authenticationFailed` | Login failed. Unknown user and wrong secret are deliberately not distinguished. |

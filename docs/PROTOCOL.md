@@ -2,13 +2,13 @@
 
 `PROTOCOL_VERSION` 0.1, draft v0.
 
-**Status: proposal for the Phase 0 gate.** Nothing here is implemented, formally modelled or reviewed by an outside cryptographer. The wire format freezes at Phase 2, and major version 0 makes no compatibility promise.
+**Status: proposal for the Phase 0 gate.** Nothing here is implemented. An AI-assisted review of an earlier version found defects, which are fixed here, but the fixes have not been re-reviewed. There is no formal model or review by a human cryptographer yet. The wire format freezes at Phase 2, and major version 0 makes no compatibility promise.
 
 ## 1. Scope
 
 Qalqon is an authenticated, encrypted channel over byte frames. It runs between a client and a server (the control plane) and directly between two clients (the data plane). Both planes use the same handshake and record layer.
 
-The key words MUST, MUST NOT, SHOULD and MAY are used as in BCP 14 (RFC 2119 and RFC 8174).
+The key words MUST, MUST NOT, SHOULD and MAY are used as in BCP 14 (RFC 2119 and RFC 8174). A `§` refers to the build prompt in `CLAUDE.md`, and "section" refers to this document.
 
 ### What the build prompt fixes and what this draft proposes
 
@@ -16,18 +16,26 @@ The key words MUST, MUST NOT, SHOULD and MAY are used as in BCP 14 (RFC 2119 and
 | --- | --- |
 | Header fields: `magic`, `version`, `suite_id`, `msg_type`, `channel_id` u16, `seq` u64, `length` u16 | Widths of the first four fields and all code points |
 | TLV extensions | The extension layout and registry |
-| XX-style first contact, IK-style 1-RTT when the peer is known | The exact messages, and a static key-agreement key for IK |
+| XX-style first contact, IK-style 1-RTT when the peer is known | The exact messages. **This draft replaces IK with an option on the XX handshake**, explained below |
 | O'z DSt 1092 signatures over the 1106 transcript hash | The context strings and transcript layout |
 | HKDF-1106 key schedule with per-direction labels | The labels and the order of derivation |
-| Per-direction keys, 64-bit sequence plus direction in the nonce | Splitting `seq` into a key epoch and a counter |
-| Rekey at the first of 2^32 records, 1 GiB or 1 hour; 1024-entry replay window; authenticated close | The inner plaintext format, key retention times and channel control messages |
-| Offline root and online issuing CA, short validity, CRL endpoint, safety numbers | The certificate format and the safety number derivation |
+| Per-direction keys, 64-bit sequence plus direction in the nonce | Splitting `seq` into a key epoch and a counter that never restarts |
+| Rekey at the first of 2^32 records, 1 GiB or 1 hour; 1024-entry replay window; authenticated close | The inner plaintext format, key retention times, channel control messages and retry rules |
+| Offline root and online issuing CA, short validity, CRL endpoint, safety numbers | The certificate format, per-user pins and the safety number derivation |
 
-**The companion specification may already settle items in the right column.** It is not in this repository, and rule 3 of the build prompt says to ask for it rather than guess. These proposals must be reconciled with it before the freeze.
+**The companion specification may already settle items in the right column.** It is not in this repository, and §3 says to ask for it rather than guess. These proposals must be reconciled with it before the freeze.
+
+### Why there is no separate IK handshake
+
+The build prompt asks for an IK-style 1-RTT handshake when the peer is known. An earlier version of this draft had one, but IK's two messages cannot meet the first MUST in §1.1, which binds both endpoints' signatures to the full transcript. I's signature would go out in the first message, before R has contributed anything. Anyone who later learned that one ephemeral secret could replay the first message, complete the key exchange and impersonate I until its certificate expired.
+
+So I's signature has to follow R's message, which is the XX flow. All that remains of IK is skipping R's certificate when I already has it. Section 8 does this as an option on XX, much as TLS does with cached information (RFC 7924). I's first data still goes out after one round trip, there is only one handshake to prove, and devices need no second long-term key.
+
+**This departs from the prompt's wording and needs your approval.**
 
 ### Why this is "Noise-style", not Noise
 
-The message patterns follow Noise XX and IK. Noise authenticates with static Diffie-Hellman, but O'z DSt 1092 is a signature scheme, so authentication here follows SIGMA-I (Krawczyk, CRYPTO 2003) and the TLS 1.3 handshake (RFC 8446). Noise's security analysis therefore does not carry over, and the handshake as a whole must be proved by the formal model in `formal/` (section 15).
+The message pattern follows Noise XX. Noise authenticates with static Diffie-Hellman, but O'z DSt 1092 is a signature scheme, so authentication here follows SIGMA-I (Krawczyk, CRYPTO 2003) and the TLS 1.3 handshake (RFC 8446). Noise's security analysis therefore does not carry over, and the handshake must be proved by the formal model in `formal/` (section 15).
 
 ## 2. Conventions
 
@@ -37,6 +45,7 @@ The message patterns follow Noise XX and IK. Noise authenticates with static Dif
 - `HMAC` is RFC 2104 over `H`. `HKDF-Extract` and `HKDF-Expand` are RFC 5869 over that `HMAC`.
 - `Sign` and `Verify` are O'z DSt 1092.
 - `HashLen`, `KeyLen`, `BlockLen` and `SigLen` come from `docs/crypto-inventory.md`. This draft requires `HashLen >= 32` and `BlockLen >= 16`.
+- `ctx(name)` is `"qalqon0 " || name || 0x00`. It separates every signature and chained hash by purpose, so a value made for one purpose cannot be reused for another.
 
 ## 3. Roles and session lifecycle
 
@@ -44,9 +53,8 @@ For each session one side is the initiator (I) and the other the responder (R). 
 
 | Key | Purpose | Lifetime |
 | --- | --- | --- |
-| Identity key | O'z DSt 1092 signing key, named in the device certificate | Long-term, held by the key store |
-| Static key-agreement key | Lets a device be an IK responder | Long-term, certified, never the same as the identity key |
-| Ephemeral key | One handshake | Zeroized as soon as the handshake secret is derived |
+| Identity key | O'z DSt 1092 signing key, named in the certificate | Long-term, held by the key store |
+| Ephemeral key | One handshake | R zeroizes it once `hs` is derived. I zeroizes it once `XX_RESP` has verified or the handshake has failed, so a spoofed message cannot destroy it |
 
 The session sequence below is **reconstructed**. The diagram it comes from is missing from the design document, which only says that steps 1-7 use client-to-server channels and steps 8-10 use the direct path. Please check it against the original.
 
@@ -57,7 +65,7 @@ The session sequence below is **reconstructed**. The diagram it comes from is mi
 | 3 | Control | B does the same |
 | 4 | Control | A sends `RENDEZVOUS_OPEN`, naming B |
 | 5 | Control | `server-core` checks policy, writes an audit row and delivers `RENDEZVOUS_INCOMING` to B |
-| 6 | Control | B replies `RENDEZVOUS_ACCEPT`, and A receives `RENDEZVOUS_READY` with B's certificate chain |
+| 6 | Control | B replies `RENDEZVOUS_ACCEPT`, and A receives `RENDEZVOUS_READY` |
 | 7 | Control | A and B exchange connectivity data in `PEER_SIGNAL` |
 | 8 | Data | A transport comes up directly, or through the blind relay if NAT traversal fails |
 | 9 | Data | A and B run a Qalqon handshake and check certificates, revocation and pins |
@@ -76,7 +84,7 @@ A `suite_id` names one complete combination. There is no separate negotiation of
 
 | `suite_id` (provisional) | Key agreement | Record protection | Hash | Signature |
 | --- | --- | --- | --- | --- |
-| `0x0000` | Reserved: "not selected yet", valid only in the `XX_INIT` header | | | |
+| `0x0000` | Reserved: "not selected yet". Valid only in `XX_INIT`, in its fragments and in `HS_REJECT` | | | |
 | `0x0101` | `nat` + X25519 | R | 1106 | 1092 |
 | `0x0102` | `nat` + X25519 + ML-KEM-768 | R | 1106 | 1092 |
 
@@ -94,13 +102,13 @@ Every frame starts with this 18-byte header.
 | 2 | 1 | `version` | High nibble major, low nibble minor. `0x01` is 0.1 |
 | 3 | 2 | `suite_id` | Section 4 |
 | 5 | 1 | `msg_type` | Section 5.2 |
-| 6 | 2 | `channel_id` | 0 for handshake messages. Section 10 for records |
+| 6 | 2 | `channel_id` | 0 for handshake messages. Section 9.6 for records |
 | 8 | 8 | `seq` | 0 for handshake messages. Section 9.3 for records |
 | 16 | 2 | `length` | Bytes following the header |
 
 `hdr16(M)` means the first 16 bytes of M's header, which is everything except `length`. Transcripts use `hdr16` because `length` depends on the signature and MAC sizes. The full header is still authenticated as AEAD associated data.
 
-A frame with the wrong `magic`, an unknown `msg_type`, or trailing bytes after `length` is invalid. Invalid frames are dropped on datagram transports and close the session on stream transports.
+A frame with the wrong `magic`, an unknown `msg_type`, or trailing bytes after `length` is invalid. Invalid frames are dropped on lossy transports and close the session on strict ones (section 5.3).
 
 ### 5.2 Message types
 
@@ -109,10 +117,8 @@ A frame with the wrong `magic`, an unknown `msg_type`, or trailing bytes after `
 | `0x01` | `XX_INIT` | I to R |
 | `0x02` | `XX_RESP` | R to I |
 | `0x03` | `XX_FINISH` | I to R |
-| `0x04` | `IK_INIT` | I to R |
-| `0x05` | `IK_RESP` | R to I |
-| `0x06` | `HS_REJECT` | R to I, unauthenticated (section 13) |
-| `0x07` | `HS_FRAGMENT` | Either (section 5.5) |
+| `0x04` | `HS_REJECT` | R to I, unauthenticated (section 13) |
+| `0x05` | `HS_FRAGMENT` | Either (section 5.5) |
 | `0x10` | `RECORD` | Either (section 9) |
 
 ### 5.3 Transport mapping
@@ -124,7 +130,7 @@ A frame with the wrong `magic`, an unknown `msg_type`, or trailing bytes after `
 | UDP, WebRTC DataChannel | One frame per datagram or message |
 | Relay | The relay forwards frames without parsing them |
 
-A transport adapter declares whether it is ordered, whether it is reliable, and its maximum frame size.
+A transport adapter declares whether it is ordered, whether it is reliable, and its maximum frame size. This document calls a transport **strict** if it is both ordered and reliable, and **lossy** otherwise. A reliable but unordered DataChannel counts as lossy, because a retransmission can arrive later than the replay window allows.
 
 ### 5.4 Extensions
 
@@ -133,10 +139,17 @@ An extension is `u16 type`, `u16 length`, then the value. Extensions appear in a
 | `type` | Name | Value | Sent in |
 | --- | --- | --- | --- |
 | `0x0003` | `padding` | Zero bytes | Any clear handshake body |
-| `0x8001` | `session_role` | `u8`: 1 control plane, 2 data plane | `XX_INIT`, `IK_INIT` |
-| `0x8002` | `rendezvous_id` | 16 bytes | `XX_INIT`, `IK_INIT` on the data plane |
+| `0x0004` | `known_responder` | 16 bytes (section 8) | `XX_INIT` |
+| `0x8001` | `session_role` | `u8`: 1 control plane, 2 data plane | `XX_INIT` |
+| `0x8002` | `rendezvous_id` | 16 bytes | `XX_INIT` on the data plane |
 
-R MUST reject a `session_role` that does not match its own role. On the data plane, R MUST silently drop a first message whose `rendezvous_id` it did not receive from `server-core`. This stops strangers from probing for its certificate.
+R MUST reject a `session_role` that does not match its own role.
+
+On the data plane, R MUST silently drop a first message whose `rendezvous_id` it did not receive from `server-core`, which stops strangers from probing for its certificate. The ID is in the clear, so these limits apply:
+
+- An ID expires 120 seconds after the client receives it.
+- R runs at most 4 handshakes at once per ID.
+- The first handshake to complete consumes the ID. Any others are abandoned and later first messages are dropped, so a replay cannot replace a live session.
 
 ### 5.5 Handshake fragmentation and reliability
 
@@ -149,9 +162,15 @@ u16 offset;
 opaque fragment[...];
 ```
 
-Transcripts and associated data always use the reassembled message. A receiver buffers at most 32 KiB per handshake.
+Each fragment's header carries the `suite_id` of the message it belongs to. The reassembled message takes that header with `msg_type = inner_msg_type` and `length = total_len`, and transcripts and associated data always use the reassembled form. A fragment is invalid if it runs past `total_len`, changes `total_len`, or overlaps earlier data with different bytes. A receiver buffers at most 32 KiB per handshake.
 
-On unreliable transports, flights are retransmitted as in DTLS 1.3 (RFC 9147, section 5.8), starting at 500 ms and doubling, with a 30-second overall limit. A retransmission repeats the same bytes. I repeats `XX_FINISH` until it receives a valid record from R. Reliable transports do not retransmit.
+On lossy transports, flights are retransmitted as in DTLS 1.3 (RFC 9147, section 5.8), starting at 500 ms and doubling, with a 30-second overall limit:
+
+- I repeats `XX_INIT` until `XX_RESP` arrives, and repeats `XX_FINISH` until any valid record arrives from R.
+- R answers a duplicate `XX_INIT` by repeating its stored `XX_RESP`, without signing again.
+- R answers a duplicate `XX_FINISH` with a new `KEY_CONFIRM` record, at most once per second.
+
+Strict transports do not retransmit.
 
 To limit amplification on datagram transports, I MUST pad its first message to at least 1,200 bytes, and R MUST NOT send more than 3 times the bytes it has received until the handshake completes (RFC 9000, sections 8.1 and 14.1).
 
@@ -168,12 +187,12 @@ HkdfLabel = u16(Length) || vec8("qalqon0 " || Label) || vec8(Context)
 Derive-Secret(Secret, Label, Transcript) =
     HKDF-Expand-Label(Secret, Label, H(Transcript), HashLen)
 
-salt0 = H("qalqon0 salt")
+salt0 = H(ctx("salt"))
 ```
 
 The label prefix contains the major version, so different majors can never share keys.
 
-**Key agreement input.** `ee` is the shared secrets of the selected suite's components, concatenated in ascending `kex_id` order (ADR-0001), using the two sides' ephemeral shares. `es` is the same combination using I's ephemeral share and R's static key-agreement key.
+**Key agreement input.** `ee` is the shared secrets of the selected suite's components, concatenated in ascending `kex_id` order (ADR-0001). For a KEM component, I's share is a fresh encapsulation key, and R encapsulates to it and returns the ciphertext.
 
 **Keys from a traffic secret.** For a traffic secret `S`:
 
@@ -186,13 +205,7 @@ fin = HKDF-Expand-Label(S, "finished", "", HashLen)   // only for handshake secr
 
 Secrets labelled `i` protect I-to-R traffic, and secrets labelled `r` protect R-to-I traffic. All secrets MUST be zeroized when no longer needed.
 
-**Signature input.** Each signature covers a context string that prevents reuse in another role:
-
-```
-ctx(role) = "qalqon0 " || role || " signature" || 0x00
-```
-
-## 7. XX-style handshake (first contact)
+## 7. The handshake
 
 ```
 Initiator                                          Responder
@@ -202,6 +215,7 @@ XX_INIT    random, offers, shares   ------->
            <-------   XX_RESP  random, shares, {chain_r, sig_r, mac_r}
 hs = Extract(salt0, ee)
 XX_FINISH  {chain_i, sig_i, mac_i}  ------->
+           <-------   RECORD {KEY_CONFIRM}
            <=======    records    =======>
 
 { } means encrypted under the handshake keys for that direction.
@@ -225,7 +239,7 @@ XX_RESP clear part:
     vec16  extensions;
 
 XX_RESP encrypted part (under r_hs):
-    vec16  chain_r;
+    vec16  chain_r;      // empty if section 8 applies
     vec16  sig_r;
     opaque mac_r[HashLen];
 
@@ -244,7 +258,7 @@ The encrypted parts use `seq` 0, the keys from their handshake secret, and assoc
 ```
 T1 = hdr16(XX_INIT) || XX_INIT body
 T2 = T1 || hdr16(XX_RESP) || XX_RESP clear part
-T3 = T2 || vec16(chain_r)
+T3 = T2 || vec16(chain_r)      // always the full chain, even if omitted on the wire
 T4 = T3 || vec16(sig_r)
 T5 = T4 || mac_r
 T6 = T5 || hdr16(XX_FINISH) || vec16(chain_i)
@@ -255,9 +269,9 @@ hs   = HKDF-Extract(salt0, ee)
 i_hs = Derive-Secret(hs, "i hs", T2)
 r_hs = Derive-Secret(hs, "r hs", T2)
 
-sig_r = Sign(identity_r, ctx("responder") || H(T3))
+sig_r = Sign(identity_r, ctx("responder signature") || H(T3))
 mac_r = HMAC(fin of r_hs, H(T4))
-sig_i = Sign(identity_i, ctx("initiator") || H(T6))
+sig_i = Sign(identity_i, ctx("initiator signature") || H(T6))
 mac_i = HMAC(fin of i_hs, H(T7))
 
 ms     = HKDF-Extract(Derive-Secret(hs, "derived", ""), zeros(HashLen))
@@ -270,83 +284,34 @@ session_id = HKDF-Expand-Label(ms, "session id", H(T8), 16)
 
 ### 7.3 Processing
 
-I processes `XX_RESP` by deriving keys, opening the encrypted part, validating `chain_r` (section 11.3), then verifying `sig_r` and `mac_r`. R processes `XX_FINISH` the same way. Any failure after key agreement is `handshakeFailed`. It sends nothing that reveals which check failed, and the detail goes only to the local audit log.
+I processes `XX_RESP` in this order, and R processes `XX_FINISH` in the same way:
 
-I MAY send records immediately after `XX_FINISH`. R MUST NOT accept records or send any until it has verified `XX_FINISH`. R MUST then send a `KEY_CONFIRM` record, which tells I that R holds the same transcript and lets I stop retransmitting.
+1. Derive the keys and open the encrypted part.
+2. Validate the peer's chain (section 11.3), without changing any pin.
+3. Verify the signature and the MAC.
+4. Apply the pin check (section 11.4). A first-contact pin is committed only now.
 
-## 8. IK-style handshake (peer already known)
+**Failures are uniform on the wire.** Nothing the peer receives reveals which check failed. Locally, the SDK reports `handshakeFailed`, except for `peerIdentityChanged`, `peerRevoked` and `revocationDataStale`, which the user has to act on. The detail goes to the local audit log.
 
-I already holds R's certificate from an earlier XX handshake or from rendezvous, and that certificate contains a static key-agreement key. The handshake finishes in one round trip.
+On a strict transport any failure ends the handshake. On a lossy transport a message that fails to open or verify is ignored, because it may be spoofed, and the handshake fails only when the timer expires, with the last failure's local reason.
 
-```
-Initiator                                          Responder
+I MAY send records immediately after `XX_FINISH`, so I's first data goes out after one round trip. R MUST NOT accept records or send any until it has verified `XX_FINISH`. R MUST then send a `KEY_CONFIRM` record, which tells I that R holds the same transcript and lets I stop retransmitting.
 
-IK_INIT    random, key_id, shares,  ------->
-           {chain_i, sig_i}                        hs = Extract(.., ee)
-           <-------   IK_RESP  random, shares, {sig_r, mac_r}
-RECORD     {KEY_CONFIRM}            ------->
-           <=======    records    =======>
-```
+## 8. Known peers: omitting the responder's certificate
 
-### 8.1 Messages
+If I holds R's chain from an earlier successful handshake with this peer, it MAY add `known_responder` to `XX_INIT`, using its own `random` from that message:
 
 ```
-IK_INIT clear part:
-    opaque random[32];
-    opaque responder_key_id[16];   // first 16 bytes of H(R's leaf certificate)
-    vec16  shares;                 // ephemeral shares for the suite in the header, plus
-                                   // a ciphertext to R's static key for any KEM component
-    vec16  extensions;
-
-IK_INIT encrypted part (under i_ik):
-    vec16  chain_i;
-    vec16  sig_i;
-
-IK_RESP clear part:
-    opaque random[32];
-    vec16  shares;
-    vec16  extensions;
-
-IK_RESP encrypted part (under r_hs):
-    vec16  sig_r;
-    opaque mac_r[HashLen];
+known_responder = first 16 bytes of H(random || H(chain_r))
 ```
 
-### 8.2 Transcript and derivations
+Mixing in `random` means a passive observer cannot link sessions to the same responder by this value.
 
-```
-ck   = HKDF-Extract(salt0, es)
+R recomputes this value for its current chain. If it matches, R sends `chain_r` as an empty field in `XX_RESP`. If it does not match, R sends its chain as usual and the handshake continues, so there is no fallback and no extra round trip. Everything else in section 7 is unchanged, and the transcript contains the full chain in both cases.
 
-T1   = hdr16(IK_INIT) || IK_INIT clear part
-i_ik = Derive-Secret(ck, "i ik", T1)
-T2   = T1 || vec16(chain_i)
-sig_i = Sign(identity_i, ctx("initiator") || H(T2))
-T3   = T2 || vec16(sig_i)
-
-T4   = T3 || hdr16(IK_RESP) || IK_RESP clear part
-hs   = HKDF-Extract(Derive-Secret(ck, "derived", ""), ee)
-r_hs = Derive-Secret(hs, "r hs", T4)
-sig_r = Sign(identity_r, ctx("responder") || H(T4))
-T5   = T4 || vec16(sig_r)
-mac_r = HMAC(fin of r_hs, H(T5))
-T6   = T5 || mac_r
-
-ms     = HKDF-Extract(Derive-Secret(hs, "derived", ""), zeros(HashLen))
-i_ap_0 = Derive-Secret(ms, "i ap", T6)
-r_ap_0 = Derive-Secret(ms, "r ap", T6)
-session_id = HKDF-Expand-Label(ms, "session id", H(T6), 16)
-```
-
-### 8.3 Replay and key confirmation
-
-`IK_INIT` can be replayed, because it contains no contribution from R. A replay gets nowhere without I's ephemeral secret, but R has not yet proved I is present. So:
-
-- I MUST send a `KEY_CONFIRM` record immediately after verifying `IK_RESP`. On unreliable transports it repeats this with a new sequence number, using the timers in section 5.5, until it receives a valid record from R.
-- R MUST NOT report the session as established, act on I's identity, or send application data until it has opened a valid record from I. R MUST then reply with its own `KEY_CONFIRM`.
-
-### 8.4 Fallback to XX
-
-If R does not recognise `responder_key_id`, it sends `HS_REJECT` with code `unknown_key`, and I starts again with `XX_INIT`. An attacker can force this by forging the rejection. That costs I's identity some protection from active attackers, but not authentication, because the XX handshake still checks the pin. An IK-to-XX fallback MUST be written to the audit log. A changed identity key is then detected by the pin check in section 11.4.
+- I MUST validate its cached chain on every use, as in section 11.3, including expiry and revocation.
+- I MUST treat an empty `chain_r` as a failure if it did not send `known_responder`.
+- A chain received from a server during rendezvous MUST NOT be used for this. It has to come from a completed handshake.
 
 ## 9. Record layer
 
@@ -379,35 +344,41 @@ For CTR, `IvLen = BlockLen - 4`, and each counter block is `nonce || u32(block_i
 seq = (epoch << 48) | counter     // epoch: 16 bits, counter: 48 bits
 ```
 
-This is the same split as DTLS 1.2 (RFC 6347). Each direction has its own sequence space, shared across all channels, because all channels in a session use the same traffic keys. Using a per-channel sequence would reuse nonces. `counter` starts at 0 in each epoch and is never reused. When epoch 65,535 is exhausted, the session MUST be replaced by a new handshake.
+The split follows DTLS 1.2 (RFC 6347), with one difference: **`counter` runs for the whole session and does not restart at a rekey.** A deleted record therefore shows up as a gap, even across an epoch change, and one replay window is enough for each direction.
+
+Each direction has its own sequence space, shared across all channels, because all channels in a session use the same traffic keys. A per-channel sequence would reuse nonces. When either field would overflow, the session MUST be replaced by a new handshake.
 
 ### 9.4 Receiving a record
 
 1. Check the header, including `version` and `suite_id`.
-2. Find the key for `epoch`: the current epoch, the next one, or the previous one during its retention time. Anything else is rejected.
-3. On an ordered and reliable transport, require exactly the next `counter`. On any other transport, reject a `counter` that is older than the 1,024-entry window or already seen.
+2. Find the key for `epoch`.
+   - Strict: the current epoch only. The receiver moves to the next epoch when it opens `KEY_UPDATE`, so an epoch change without one is rejected.
+   - Lossy: the current epoch, an earlier one during its retention time, or up to 16 epochs ahead.
+3. Check `counter`.
+   - Strict: it must be exactly the next one.
+   - Lossy: reject it if it is older than the 1,024-entry window or already seen.
 4. Open the record.
 5. Only after that succeeds, update the replay window and commit any new epoch.
 
-A failed record is dropped on unreliable transports and counted in metrics. On reliable transports it is fatal, and the session closes with a generic error. The peer never learns which step failed.
+A failed record closes a strict session with a generic error. On a lossy session it is dropped and counted, and it is never fatal. The peer never learns which step failed.
 
 ### 9.5 Rekeying
 
-A sender moves its own direction to the next epoch before reaching any of these limits: 2^32 records, 2^30 bytes of plaintext, or 3,600 seconds in the epoch. It needs no cooperation from the peer.
+A sender rotates its own direction before reaching any of these limits in an epoch, including while idle: 2^32 records, 2^30 bytes of plaintext, or 3,600 seconds. It needs no cooperation from the peer. To rotate, it sends `KEY_UPDATE` as its last record under the old keys, moves to the next epoch, and zeroizes the old secret and keys at once.
 
 ```
 S_next = HKDF-Expand-Label(S, "traffic upd", "", HashLen)
 ```
 
-`S` and the keys derived from it are zeroized at once on the sending side. A receiver derives the next epoch's keys when it first sees that epoch, and commits only after a record opens successfully. It keeps the previous receive keys for at most 30 seconds on unordered transports, and not at all on ordered ones. A receiver MAY close a session whose peer exceeds twice a record or byte limit in one epoch.
+On a strict transport the receiver moves when it opens `KEY_UPDATE`, and keeps no old keys. On a lossy transport `KEY_UPDATE` can be lost or overtaken, so the receiver derives forward when it first sees a later epoch and commits only after a record opens. It keeps earlier receive keys for at most 30 seconds. A receiver MAY close a session whose peer exceeds twice a record or byte limit in one epoch.
 
-`rotateKeys` moves the local direction and sends `KEY_UPDATE` with `update_requested = 1`, asking the peer to do the same. A peer honours such a request at most once per second.
+`KEY_UPDATE` with `update_requested = 1` also asks the peer to rotate. The peer rotates and sends `KEY_UPDATE` with `update_requested = 0`, which needs no reply, so requests cannot loop. A peer serves at most one request per second and defers the rest rather than dropping them, so that repeated requests combine into one rotation. `rotateKeys` sends such a request, and completes when the peer's epoch has advanced.
 
-Rekeying protects earlier traffic if a current key leaks. It does not recover from a compromise, because later keys follow from the current secret. Recovering requires a new handshake.
+Rekeying protects earlier traffic if a current key leaks, once the old keys are erased. It does not recover from a compromise, because later keys follow from the current secret. Recovering requires a new handshake.
 
 ### 9.6 Inner plaintext
 
-The first byte of a record's plaintext is `inner_type`.
+The first byte of a record's plaintext is `inner_type`. The header's `channel_id` is the channel's ID for `DATA` and `CHANNEL_*` records, and 0 for all others.
 
 | `inner_type` | Name | Body |
 | --- | --- | --- |
@@ -423,17 +394,33 @@ The first byte of a record's plaintext is `inner_type`.
 | `0x0A` | `CLOSE` | `u16 reason` |
 | `0x20` | `CONTROL` | Section 12. Control plane only |
 
+`reason` is one of: 0 `normal`, 1 `protocol_error`, 2 `transport_unsupported`, 3 `message_too_large`, 4 `rejected`, 5 `timeout`, 6 `internal_error`.
+
 An application message larger than one record is split into `DATA` fragments. Reassembly is limited to 16 MiB per message and 64 MiB per session by default, and partial messages on unordered channels time out after 30 seconds.
 
 ### 9.7 Authenticated close
 
-A side finishing a session sends `CLOSE`, then zeroizes its send keys. The receiver replies with `CLOSE` and zeroizes its keys. If the transport ends without a `CLOSE`, the SDK reports an unclean closure, so an application can detect truncation.
+A side finishing a session sends `CLOSE`, then zeroizes its send keys. On a strict transport the receiver replies with `CLOSE` and zeroizes its keys. On a lossy transport there is no reply: the sender sends `CLOSE` three times, 200 ms apart and with new sequence numbers, before zeroizing.
+
+If the transport ends without a valid `CLOSE`, or a peer stops answering `PING`, the SDK reports an unclean closure, so an application can detect truncation. Each SDK chooses its own `PING` interval.
+
+### 9.8 Control records on lossy transports
+
+Records can be lost on a lossy transport, so a sender repeats these on the timers in section 5.5, each time as a new record with a new sequence number. After 30 seconds it gives up and reports `timeout`.
+
+| Record | Repeated until | The receiver |
+| --- | --- | --- |
+| `CHANNEL_OPEN` | `CHANNEL_ACCEPT` or `CHANNEL_REJECT` arrives | Answers a duplicate with the same reply |
+| `CHANNEL_CLOSE` | `CHANNEL_CLOSE` arrives for that channel | Answers a duplicate with `CHANNEL_CLOSE` |
+| `KEY_UPDATE` with `update_requested = 1` | The peer's epoch advances | Treats it as in section 9.5. Each repeat rotates the sender again, because `KEY_UPDATE` is always the last record under its keys |
+
+A lost `KEY_UPDATE` with `update_requested = 0` needs no repeat, because the first record of the next epoch has the same effect.
 
 ## 10. Channels
 
 Channel 0 is the session's control channel and always exists. Application channels use IDs from 1 to 65,535: I allocates odd IDs and R allocates even ones, so the two sides never collide. `channel_id` is in the clear but authenticated.
 
-A channel is opened with `CHANNEL_OPEN` and answered with `CHANNEL_ACCEPT` or `CHANNEL_REJECT`. The core does not retransmit, so a channel that requires `reliable` over an unreliable transport is rejected with `transportUnsupported`.
+A channel is opened with `CHANNEL_OPEN` and answered with `CHANNEL_ACCEPT` or `CHANNEL_REJECT`. The core does not retransmit application data, so a channel that requires `reliable` on a lossy transport is rejected with `transportUnsupported`.
 
 ## 11. Certificates and trust
 
@@ -451,36 +438,52 @@ Certificate:
     vec16 signature;    // Sign(issuer, ctx("certificate") || H(tbs))
 
 tbs extensions, in ascending type order:
-    0x0009 kex_static       KeyShare list, present only if the device accepts IK
     0x8001 format_version   u8
     0x8002 serial           16 bytes
     0x8003 role             u8: 1 root, 2 issuing, 3 server, 4 device, 5 pre-enrolment
-    0x8004 subject          vec8 user_id, vec8 device_id
+    0x8004 subject          vec8 a, vec8 b:
+                              role 3: host name, server instance
+                              role 4: user_id, device_id
+                              roles 1, 2: name, empty
+                              role 5: both empty
     0x8005 not_before       u64, milliseconds since the Unix epoch
     0x8006 not_after        u64
     0x8007 sign_public      u16 algorithm, vec16 key
-    0x8008 issuer_key_id    16 bytes
+    0x8008 issuer_key_id    16 bytes: first 16 bytes of H(issuer's sign_public key)
 ```
-
-A `chain` is the leaf certificate followed by the issuing CA's certificate. The root comes from the local CA bundle and is never accepted from the wire.
 
 ### 11.3 Validating a peer's chain
 
-1. Check the signatures up to a root in the CA bundle.
-2. Check validity times and that the role fits the plane.
-3. Check that the subject matches the identity expected from rendezvous or login.
-4. Check the serial against the CRL (section 11.5).
-5. Apply the pin check (section 11.4).
+A chain has exactly two certificates: the leaf, then the issuing CA's certificate. The one exception is a pre-enrolment chain, which is a single self-signed certificate. The root comes from the local CA bundle and is never accepted from the wire.
+
+1. **Shape and signatures.** The leaf's `issuer_key_id` names the issuing certificate, which has role 2, and whose `issuer_key_id` names a role 1 root in the CA bundle. Verify both signatures. Reject any other shape, so a device certificate can never act as a CA.
+2. **Times.** Every certificate is within its validity period.
+3. **Role.** On the control plane, R is role 3, and I is role 4, or role 5 for enrolment. On the data plane, both are role 4.
+4. **Subject.**
+   - On the control plane, I checks the host name in R's subject against the host in `serverUrl`.
+   - On the control plane, R checks at login: `user_id` in `LOGIN_REQUEST` must equal the certificate's, otherwise login fails with `authenticationFailed`.
+   - On the data plane, both sides check the subject against the user, and any device, named at rendezvous.
+5. **Revocation.** Section 11.5.
+6. **Pin, on the data plane only.** Section 11.4, after the signature and MAC have verified (section 7.3). Servers are not pinned: the CA and host name identify them, and the end-to-end guarantees never rely on trusting a server.
 
 ### 11.4 Fingerprints, pins and safety numbers
 
 ```
-fingerprint = H("qalqon0 fingerprint" || 0x00 || sign_public)
+fingerprint = H(ctx("fingerprint") || sign_public)
 ```
 
-A fingerprint covers the identity key alone, so it survives certificate renewal. On first contact a client pins `(user_id, device_id) -> fingerprint`. If a later handshake shows a different fingerprint, the session fails with `peerIdentityChanged`, and the default policy blocks until the user re-verifies. The pin store is local to the device, and the server has no access to it.
+A fingerprint covers the identity key alone, so it survives certificate renewal.
 
-A safety number lets two people compare identities out of band:
+**Pins are per user.** On first contact with a user, a client pins that device: `user_id -> { device_id -> fingerprint }`. A later handshake fails with `peerIdentityChanged` in either of these cases:
+
+- The device's fingerprint differs from its pin.
+- The device is new, and that user already has a pin.
+
+The default policy blocks until the user re-verifies with a safety number, and the new device then joins the user's pins. The pin store is local to the device, and the server has no access to it.
+
+New devices have to count as a change because the server assigns device IDs and can choose which device a call reaches. Otherwise it could route a call to a device it invented, and no pin would ever be consulted.
+
+**Safety numbers** let two people compare identities out of band:
 
 ```
 a, b = the two fingerprints, sorted bytewise
@@ -489,45 +492,80 @@ okm  = HKDF-Expand-Label(HKDF-Extract(salt0, a || b), "safety", "", 60)
 
 Each 5 bytes of `okm`, read as an integer modulo 100,000, gives one 5-digit group, for 60 digits in total. Both sides compute the same number.
 
-**Malicious server limits.** A server cannot read or alter data-plane traffic without a valid certificate for the peer. If the same party runs the issuing CA, it could issue one and attack a first contact. Pins detect a later substitution, and only safety numbers detect one at first contact. Operators SHOULD run the issuing CA separately from hosts. Key transparency is out of scope for this version.
+**What this does against a malicious server.** A server authorises enrolment, so it can obtain a valid certificate for any user, even if the issuing CA runs separately. The CA therefore does not stop a malicious server. Pins and safety numbers do. A substitution against a user you already know is blocked by the pin check. A substitution at first contact is detected only if the two people compare safety numbers, so **first contact without comparison is exposed**. Key transparency is out of scope for this version.
 
 ### 11.5 Revocation
 
-The issuing CA signs a CRL containing `issuer_key_id`, `this_update`, `next_update` (at most 24 hours later) and the revoked serials. Clients fetch it over the control plane and cache it. A server can withhold a CRL but cannot forge one, so a client MUST refuse new data-plane sessions with `revocationDataStale` once its CRL is more than 72 hours past `next_update`, unless policy says otherwise.
+The issuing CA signs a CRL containing `issuer_key_id`, `this_update`, `next_update` (at most 24 hours later) and the revoked serials: `Sign(issuing CA, ctx("crl") || H(crl body))`. Clients fetch it over the control plane when connecting and before `next_update`, and cache it.
+
+- **No rollback.** A client MUST reject a CRL older than its cached one, by `this_update`.
+- **Fail closed.** A server can withhold a CRL but cannot forge one, so a missing CRL counts as stale. New data-plane sessions fail with `revocationDataStale` once `next_update` is further in the past than `revocationGraceMs` allows (default 72 hours). That setting is local to the client, and server policy cannot change it.
+- **First connection.** A client with no CRL yet may complete the control-plane handshake. It MUST then fetch the CRL at once, and close if the server's certificate is listed.
+- **Live sessions.** When a new CRL lists the peer of a live session, the client closes that session with `peerRevoked`.
+
+Revoking the issuing CA itself means replacing the CA bundle, because no CRL covers it in this version.
 
 ### 11.6 Enrolment
 
-Each channel requires both endpoints to authenticate, including during enrolment. A new device generates its identity key and uses a self-signed certificate with role `pre-enrolment` in an ordinary handshake. `server-core` restricts such a session to `ENROLL_REQUEST` and `CRL_REQUEST`. Clients MUST refuse this role on the data plane. The server issues the real certificate after checking the one-time enrolment token.
+Every channel requires both endpoints to authenticate, including during enrolment. A new device generates its identity key and uses a self-signed certificate with role 5 in an ordinary handshake. `server-core` restricts such a session to `ENROLL_REQUEST` and `CRL_REQUEST`. Clients MUST refuse this role on the data plane. The server issues the real certificate after checking the one-time enrolment token, and the device then reconnects with it.
 
 ## 12. Control plane messages
 
-Control messages are `CONTROL` records on channel 0 of a client-to-server session. The body is `u16 control_type`, then fields encoded as extensions (section 5.4).
+Control messages are `CONTROL` records on channel 0 of a client-to-server session. The body is `u16 control_type`, then fields encoded as extensions (section 5.4). A control message MUST fit in one record.
 
 | `control_type` | Message | Direction | Fields |
 | --- | --- | --- | --- |
-| `0x0001` | `ENROLL_REQUEST` | C to S | Token, device name |
-| `0x0002` | `ENROLL_RESULT` | S to C | Status, chain |
-| `0x0003` | `LOGIN_REQUEST` | C to S | User ID, secret, optional MFA code |
-| `0x0004` | `LOGIN_RESULT` | S to C | Status, retry-after |
-| `0x0005` | `RENDEZVOUS_OPEN` | C to S | Request ID, peer user, optional peer device, label |
-| `0x0006` | `RENDEZVOUS_INCOMING` | S to C | Request ID, `rendezvous_id`, caller, caller's chain |
-| `0x0007` | `RENDEZVOUS_ACCEPT` | C to S | Request ID |
-| `0x0008` | `RENDEZVOUS_REJECT` | Either | Request ID, reason |
-| `0x0009` | `RENDEZVOUS_READY` | S to C | Request ID, `rendezvous_id`, peer's chain, relay grants |
-| `0x000A` | `PEER_SIGNAL` | Either | `rendezvous_id`, opaque blob (SDP, ICE candidates) |
-| `0x000B` | `CRL_REQUEST` | C to S | Issuer key ID |
-| `0x000C` | `CRL_RESPONSE` | S to C | CRL |
+| `0x0001` | `ENROLL_REQUEST` | C to S | `token`, `device_name` |
+| `0x0002` | `ENROLL_RESULT` | S to C | `status`, `chain` on success |
+| `0x0003` | `LOGIN_REQUEST` | C to S | `user_id`, `secret`, optional `mfa_code` |
+| `0x0004` | `LOGIN_RESULT` | S to C | `status`, optional `retry_after_ms` |
+| `0x0005` | `RENDEZVOUS_OPEN` | C to S | `request_id`, `user_id`, optional `device_id`, `channel_options` |
+| `0x0006` | `RENDEZVOUS_INCOMING` | S to C | `request_id`, `rendezvous_id`, `user_id`, `device_id`, `chain`, `channel_options`, `relay_grants` |
+| `0x0007` | `RENDEZVOUS_ACCEPT` | C to S | `request_id` |
+| `0x0008` | `RENDEZVOUS_REJECT` | Either | `request_id` |
+| `0x0009` | `RENDEZVOUS_READY` | S to C | `request_id`, `rendezvous_id`, `chain`, `relay_grants` |
+| `0x000A` | `PEER_SIGNAL` | Either | `rendezvous_id`, `blob` |
+| `0x000B` | `CRL_REQUEST` | C to S | `issuer_key_id` |
+| `0x000C` | `CRL_RESPONSE` | S to C | `crl` |
 | `0x000D` | `CERT_RENEW_REQUEST` | C to S | None |
-| `0x000E` | `CERT_RENEW_RESULT` | S to C | Status, chain |
-| `0x000F` | `SESSION_REPORT` | C to S | `session_id`, path (direct or relayed), counters |
+| `0x000E` | `CERT_RENEW_RESULT` | S to C | `status`, `chain` on success |
+| `0x000F` | `SESSION_REPORT` | C to S | `session_id`, `path`, `counters` |
 
-`RENDEZVOUS_REJECT` does not say whether a peer is offline, declined or hidden by policy, so a client cannot probe for users. A relay grant contains a relay address, a short-lived token and an expiry. Relays forward frames and hold no keys. `SESSION_REPORT` is self-reported, so it feeds metrics and never feeds security decisions.
+| `type` | Field | Value |
+| --- | --- | --- |
+| `0x8101` | `request_id` | 16 bytes |
+| `0x8102` | `rendezvous_id` | 16 bytes |
+| `0x8103` | `status` | `u16`, an error code from the IDL |
+| `0x8104` | `token` | Bytes |
+| `0x8105` | `device_name` | UTF-8 |
+| `0x8106` | `user_id` | UTF-8 |
+| `0x0107` | `device_id` | UTF-8. Non-critical because it is optional in a request |
+| `0x8108` | `secret` | Bytes. Never logged |
+| `0x0109` | `mfa_code` | UTF-8 |
+| `0x010A` | `retry_after_ms` | `u32` |
+| `0x810B` | `chain` | Bytes |
+| `0x810C` | `channel_options` | `u8 ordered; u8 reliable; vec8 label` |
+| `0x810D` | `relay_grants` | Repeated: `vec8 address; vec8 token; u64 expires_at` |
+| `0x810E` | `blob` | Bytes: opaque SDP and ICE data |
+| `0x810F` | `issuer_key_id` | 16 bytes |
+| `0x8110` | `crl` | Bytes |
+| `0x8111` | `session_id` | 16 bytes |
+| `0x8112` | `path` | `u8`: 1 direct, 2 relayed |
+| `0x8113` | `counters` | `u64 records; u64 bytes` |
+
+Both sides of a rendezvous receive `relay_grants`, because either may need the relay. A grant's token is short-lived, and relays forward frames while holding no keys.
+
+`RENDEZVOUS_REJECT` does not say whether a peer is offline, declined or hidden by policy, so a client cannot probe for users.
+
+A `chain` in a rendezvous message is only a hint for showing who is calling. It is never trusted: the handshake authenticates the peer's own chain, and section 8 refuses to use it.
+
+`SESSION_REPORT` is self-reported, so it feeds metrics and never feeds security decisions.
 
 ## 13. Handshake rejection
 
-`HS_REJECT` has the body `u16 code`: 1 `unsupported_version`, 2 `unsupported_suite`, 3 `unknown_key`, 4 `busy`.
+`HS_REJECT` has the body `u16 code; opaque echo_random[32]`. The codes are 1 `unsupported_version`, 2 `unsupported_suite` and 3 `busy`. `echo_random` repeats `random` from the `XX_INIT` being rejected, and I ignores a rejection whose echo does not match, so an off-path attacker cannot forge one.
 
-It is unauthenticated, so anyone can forge it. A client MUST NOT weaken its offers in response. The only permitted reaction other than failing is the IK-to-XX fallback in section 8.4.
+An on-path attacker still can, because it is unauthenticated. A client MUST NOT weaken its offers in response. The only permitted reaction is to fail the attempt.
 
 ## 14. Audit chain
 
@@ -536,41 +574,47 @@ entry_0 = H(ctx("audit genesis") || fingerprint)
 entry_n = H(ctx("audit") || entry_(n-1) || canonical(event_n))
 ```
 
-An endpoint periodically signs a checkpoint: `Sign(identity, ctx("audit checkpoint") || u64(n) || entry_n)`. `exportAudit` returns the events, the chain head and the latest checkpoint. The event schema, its canonical encoding and the event list from build prompt §1.6 are specified with `core/qalqon-audit` in Phase 1.
+An endpoint periodically signs a checkpoint: `Sign(identity, ctx("audit checkpoint") || u64(n) || entry_n)`. `exportAudit` returns the events, the chain head and the latest checkpoint. The event schema, its canonical encoding and the event list from §1.6 are specified with `core/qalqon-audit` in Phase 1.
 
 ## 15. Security properties for the formal model
 
-The Tamarin or ProVerif model in `formal/` must prove these for both handshakes, against an attacker who controls the network and the server:
+The Tamarin or ProVerif model in `formal/` must prove these, against an attacker who controls the network and the server:
 
 1. **Secrecy** of `i_ap_*` and `r_ap_*`.
-2. **Forward secrecy:** compromising identity and static keys after a session does not reveal its traffic keys.
+2. **Forward secrecy:** compromising identity keys after a session does not reveal its traffic keys.
 3. **Hybrid secrecy:** secrets hold while any one key agreement component is sound.
-4. **Mutual injective agreement** on the transcript, roles and identities. In XX, R reaches it on verifying `XX_FINISH`, and I on opening R's `KEY_CONFIRM`. In IK, I reaches it on verifying `IK_RESP`, and R on opening I's `KEY_CONFIRM`.
-5. **Downgrade resistance:** both sides agree on the version, the suite and I's full offer.
-6. **No identity misbinding** and no key compromise impersonation.
-7. **Rekey forward secrecy:** a leak in epoch n does not reveal any earlier epoch.
+4. **Mutual injective agreement** on the transcript, roles and identities. R reaches it on verifying `XX_FINISH`, and I on opening R's `KEY_CONFIRM`.
+5. **No impersonation from a leaked ephemeral:** learning one session's ephemeral secret does not let an attacker impersonate that party in any other session.
+6. **Downgrade resistance:** both sides agree on the version, the suite and I's full offer, including `known_responder`.
+7. **No identity misbinding** and no key compromise impersonation.
+8. **Rekey forward secrecy:** a leak in one epoch does not reveal any epoch whose keys have already been erased. A receiver's retained keys on a lossy transport are not yet erased, so they are excluded for up to 30 seconds.
+9. **Record integrity on strict transports:** an insertion, deletion, replay or reordering is always detected, and truncation is always reported as an unclean closure.
+10. **Server substitution:** for a user already pinned, a certificate the server obtained for a new device or a changed key cannot establish a channel without triggering `peerIdentityChanged`.
 
-Identity hiding is a design goal but is not one of the required lemmas. XX exposes R's identity to an active attacker who can reach it with a valid `rendezvous_id`. IK exposes I's identity if R's static key later leaks.
+Identity hiding is a design goal but is not one of the required lemmas. I's identity is encrypted under forward-secret keys and sent only after R has authenticated. R's identity is exposed to an active attacker who can reach it with a valid `rendezvous_id`.
 
 ## 16. Test vectors
 
-`tools/vectors` generates deterministic JSON vectors from the Rust reference, with randomness injected, into `tests/conformance`. They cover `HKDF-Expand-Label`, the key schedule, both handshakes byte for byte, record seal and open, replay and epoch handling, and negative cases that every binding must reject.
+`tools/vectors` generates deterministic JSON vectors from the Rust reference, with randomness injected, into `tests/conformance`. They cover `HKDF-Expand-Label`, the key schedule, the handshake byte for byte with and without `known_responder`, record seal and open, replay and epoch handling, and negative cases that every binding must reject.
 
 ## 17. Not in this version
 
-- 0-RTT data and session resumption
+- A two-message handshake, and 0-RTT data (section 1 explains why)
+- Session resumption
 - Hiding lengths, `channel_id` or timing from an observer
 - Group or multi-party channels
 - Post-compromise recovery without a new handshake
-- Key transparency
+- Cross-signing of new devices, and key transparency
 
 ## 18. Open decisions
 
 | Decision | Depends on |
 | --- | --- |
+| Replace IK with section 8, as explained in section 1 | Your approval, because the prompt asks for IK |
+| Make every new device of a known user block until re-verified, or add cross-signing so an existing device can vouch for a new one | Your choice. Blocking is simple and safe, but each contact has to re-verify whenever someone adds a device |
 | Reconcile this draft with the companion specification | You supplying that document |
 | Certificate format: TLV or X.509 | Library facts, your choice |
 | Final `suite_id` values and whether ML-KEM-768 ships in the first release | ADR-0001 |
-| Whether IK stays, given that it needs a second long-term key per device | Your choice. Without IK, a known peer connects with XX, which takes one more message and resends certificates but needs no extra key |
 | The session sequence in section 3 | The missing diagram |
+| A CRL must fit in one control record, about 4,000 revocations | Whether large deployments need paging. Short certificate validity keeps the list small |
 | Handshake state tables | Written with the formal model in Phase 1 |

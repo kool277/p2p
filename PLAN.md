@@ -32,6 +32,8 @@ Phases follow §7 of the build prompt, which is fuller than the Roadmap section 
 | 8 | Confirm the primary pairs | Phase 3 | `web-react` + `java-spring` and `cli-c` + `node-express`, as the Roadmap assumes |
 | 9 | How to record failed login secrets in the audit log | `core/qalqon-audit` | A keyed hash, as explained in `docs/COMPLIANCE.md` |
 | 10 | Move the design out of `CLAUDE.md`? | Nothing, but it adds about 16k tokens to every session | Yes, into `docs/design/` |
+| 11 | Replace the IK-style handshake with one XX handshake that can omit a cached certificate? | The protocol freeze | Yes. A two-message flow cannot meet the first MUST in §1.1. See `docs/PROTOCOL.md`, section 1 |
+| 12 | Must every new device of a known user be re-verified, or should existing devices be able to vouch for new ones? | `docs/PROTOCOL.md`, section 11.4 | Start with re-verifying, because it is simple and safe. It does cost contacts a step each time someone adds a device |
 
 ## Refinements to the design, for your approval
 
@@ -47,7 +49,9 @@ Each of these departs from, or fills a gap in, the wording of `CLAUDE.md`.
 | Host stores are polled effects, not callbacks | ADR-0002, `docs/HOST-SPI.md` | Callbacks across FFI are restricted, and blocking would stall event-loop hosts |
 | A host passes a key reference, not key bytes | `docs/HOST-SPI.md` | A host holding the bytes would break the rule against touching key bytes |
 | API additions, such as `enrollDevice` and `acceptChannel` | `docs/SDK-API.md` | The listed methods alone cannot run a session |
-| `seq` is split into a 16-bit epoch and a 48-bit counter | `docs/PROTOCOL.md`, section 9.3 | Receivers on unordered transports need to know which key a record uses |
+| One handshake that can omit a cached certificate, instead of IK | `docs/PROTOCOL.md`, sections 1 and 8 | A two-message flow cannot bind I's signature to the full transcript |
+| Pins are per user, so a known user's new device blocks until verified | `docs/PROTOCOL.md`, section 11.4 | Otherwise a malicious server could route calls to a device it invented |
+| `seq` is a 16-bit epoch plus a 48-bit counter that never restarts | `docs/PROTOCOL.md`, section 9.3 | Lossy receivers need to know which key a record uses, and a counter that never restarts exposes records deleted around a rekey |
 | Self-signed pre-enrolment certificates | `docs/PROTOCOL.md`, section 11.6 | Keeps mutual authentication on every channel, including enrolment |
 | `qalqond call` for shell clients | ADR-0004 | `curl` cannot speak framed JSON-RPC |
 | Build `clients/cli-rust` in Phase 2 | This plan | It is the peer in every interop test, but no phase names it |
@@ -66,7 +70,7 @@ Each of these departs from, or fills a gap in, the wording of `CLAUDE.md`.
 ## Open risks
 
 - **The library could change the design.** Its language, whether it compiles to `wasm32`, and whether its certificate covers rebuilds could each limit the targets. See `docs/crypto-inventory.md`.
-- **The protocol is unproven.** It is a new composition of published parts, with no formal model or outside review yet. Do not rely on it until Phase 1 is complete.
+- **The protocol is unproven.** It is a new composition of published parts. One AI-assisted review found 17 defects, which are fixed, but the fixes have not been re-reviewed, and there is no formal model or review by a human cryptographer yet. Do not rely on it until Phase 1 is complete.
 - **Publishing cryptographic code.** This repository is public. Check what the certification body and local rules allow before `provider-<lib>` is published.
 - **The schedule.** The Roadmap gives Phase 2 three weeks, but §7's Phase 2 also includes the IDL generators, the sidecar with PHP and shell clients, `qalqon new` and templates.
 - **The toolchain.** `cargo`, `rustc` and `just` are not installed on the current development machine, so they are needed before Phase 1.

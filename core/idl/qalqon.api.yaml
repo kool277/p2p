@@ -35,7 +35,7 @@ errors:
   handshakeFailed:      {code: 200, doc: "The handshake failed. The cause is deliberately not distinguished here; the local audit log records it."}
   versionMismatch:      {code: 201, doc: "The two sides share no protocol version."}
   suiteMismatch:        {code: 202, doc: "The two sides share no cipher suite."}
-  peerIdentityChanged:  {code: 203, doc: "The peer's identity key differs from its pin."}
+  peerIdentityChanged:  {code: 203, doc: "The peer's identity key differs from its pin, or a user who is already pinned presented a new device."}
   peerRevoked:          {code: 204, doc: "The peer's certificate is revoked or expired."}
   revocationDataStale:  {code: 205, doc: "The local CRL is too old to allow a new session."}
   authenticationFailed: {code: 300, doc: "Login failed. Unknown user and wrong secret are deliberately not distinguished."}
@@ -67,7 +67,7 @@ enums:
       unverified: "Never seen before, so nothing is pinned yet."
       pinned: "Pinned on first use, and not compared out of band."
       verified: "The user compared the safety number out of band."
-      changed: "The presented identity key differs from the pin."
+      changed: "The identity key differs from the pin, or this is a new device of a user who is already pinned."
   SessionState:
     doc: "The state of a client session."
     values:
@@ -122,12 +122,13 @@ records:
   SessionConfig:
     doc: "Everything needed to start a client session."
     fields:
-      serverUrl: {type: string, doc: "The host's control plane, such as wss://host/qalqon."}
+      serverUrl: {type: string, doc: "The host's control plane, such as wss://host/qalqon. Its host name must match the server's certificate."}
       caBundle: {type: bytes, doc: "The trusted root certificates."}
       keyStore: {type: KeyStoreConfig, doc: "Where this device's keys are held."}
       dataDir: {type: "string?", doc: "The directory for pins and the audit chain. Not used on web."}
       relayPolicy: {type: "RelayPolicy?", doc: "Defaults to preferDirect."}
       identityChangePolicy: {type: "IdentityChangePolicy?", doc: "Defaults to block."}
+      revocationGraceMs: {type: "u64?", doc: "How long past a CRL's next update new peer sessions are still allowed. Defaults to 72 hours. This is local, and server policy cannot change it."}
       externalTransport: {type: "ExternalTransport?", doc: "Set this where the application owns the sockets, such as in a browser. Unset, the SDK uses its built-in transports."}
   Credentials:
     doc: "Login details. The secret goes only to the host, inside the Qalqon channel."
@@ -150,7 +151,7 @@ records:
     doc: "Names a peer."
     fields:
       userId: {type: string, doc: "The peer's user."}
-      deviceId: {type: "string?", doc: "A specific device. Unset, the host picks an online device."}
+      deviceId: {type: "string?", doc: "A specific device. Unset, the host picks an online device, which the pin check still applies to."}
   PeerIdentity:
     doc: "What is known about a peer's identity."
     fields:
@@ -240,7 +241,7 @@ variants:
         fields:
           channelId: {type: u16, doc: "The channel."}
       peerIdentityChanged:
-        doc: "A peer's identity key differs from its pin."
+        doc: "A peer's identity key differs from its pin, or a pinned user presented a new device."
         fields:
           peer: {type: PeerIdentity, doc: "The peer, with the new fingerprint."}
       pathChanged:
@@ -324,7 +325,7 @@ functions:
       config: {type: SessionConfig, doc: "Connection settings."}
       credentials: {type: Credentials, doc: "Login details."}
     returns: Session
-    errors: [invalidArgument, timeout, transportFailed, handshakeFailed, versionMismatch, suiteMismatch, peerIdentityChanged, peerRevoked, authenticationFailed, mfaRequired, rateLimited, notEnrolled, keyStoreUnavailable, selfTestFailed, integrityCheckFailed, auditUnavailable]
+    errors: [invalidArgument, timeout, transportFailed, handshakeFailed, versionMismatch, suiteMismatch, peerRevoked, authenticationFailed, mfaRequired, rateLimited, notEnrolled, keyStoreUnavailable, selfTestFailed, integrityCheckFailed, auditUnavailable]
   createExternalTransport:
     async: false
     doc: "Creates a transport that the application drives. Pass it in SessionConfig before calling connect."
@@ -375,7 +376,7 @@ interfaces:
         errors: [invalidArgument, closed, peerUnavailable]
       rotateKeys:
         async: true
-        doc: "Moves traffic keys to a new epoch in both directions, for one peer or for all."
+        doc: "Moves traffic keys to a new epoch in both directions, for one peer or for all. Completes when the peer has moved too."
         params:
           peer: {type: "PeerRef?", doc: "The peer. Unset, all peers."}
         returns: null

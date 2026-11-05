@@ -49,9 +49,9 @@ Each component's shared secret is concatenated in ascending `kex_id` order and f
 
 `CryptoProvider` exposes `kex_keygen` and `kex_agree`. A library primitive is reached through `provider-<lib>`. Everything else is in `core/crypto-ext`, feature-gated and outside the certified boundary. Candidate crates are `x25519-dalek` and RustCrypto's `ml-kem`, chosen at Phase 1 after a `cargo-audit` and `cargo-deny` pass, and checked for `no_std` and `wasm32` builds.
 
-### Static keys for the IK-style handshake
+### One long-term key per device
 
-The IK-style handshake encrypts the initiator's identity to the responder, and a signature key cannot do that. A device that accepts IK therefore has a separate static key-agreement key, certified in its device certificate. It is never the same key as the signing key. See `docs/PROTOCOL.md`, sections 8 and 11.
+Devices hold only their identity key, and no static key-agreement key. An earlier draft needed one for an IK-style handshake, but that handshake could not meet the first MUST in §1.1. See `docs/PROTOCOL.md`, section 1. Every handshake's key agreement is therefore fully ephemeral.
 
 ## Consequences
 
