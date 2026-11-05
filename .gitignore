@@ -1,0 +1,28 @@
+# Build output and caches
+target/
+dist/
+build/
+out/
+.qalqon/
+node_modules/
+.gradle/
+__pycache__/
+*.pyc
+.venv/
+.dart_tool/
+bin/
+obj/
+
+# Keys and secrets never belong in this repository
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Local tooling
+.idea/
+.vscode/
+.DS_Store
+.claude/settings.local.json
