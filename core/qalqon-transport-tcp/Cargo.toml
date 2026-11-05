@@ -1,0 +1,15 @@
+[package]
+name = "qalqon-transport-tcp"
+description = "The TCP transport adapter."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+qalqon-core = { workspace = true }
+qalqon-transport = { workspace = true }
+
+
+[lints]
+workspace = true

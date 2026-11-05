@@ -1,0 +1,46 @@
+(* Properties 1, 2, 4, 6 and 7 (misbinding) in docs/PROTOCOL.md, section 15. Identity
+   keys and the CA key are published after the sessions end, in phase 1. *)
+
+query attacker(secret_from_i).
+query attacker(secret_from_r).
+
+(* Mutual injective agreement. R reaches it on verifying XX_FINISH, and I on opening
+   KEY_CONFIRM. Agreement covers both identities, I's full offer, the suite and keys. *)
+query b: id, o: offer, s: suite, h: bitstring, k1: key, k2: key;
+    inj-event(RAccept(alice, b, o, s, k1, k2)) ==> inj-event(IFinish(alice, b, o, s, h, k1, k2)).
+query b: id, o: offer, s: suite, h: bitstring, k1: key, k2: key;
+    inj-event(RAccept(bob, b, o, s, k1, k2)) ==> inj-event(IFinish(bob, b, o, s, h, k1, k2)).
+query a: id, o: offer, s: suite, k1: key, k2: key;
+    inj-event(IConfirmed(a, bob, o, s, k1, k2)) ==> inj-event(RAccept(a, bob, o, s, k1, k2)).
+query a: id, o: offer, s: suite, k1: key, k2: key;
+    inj-event(IConfirmed(a, alice, o, s, k1, k2)) ==> inj-event(RAccept(a, alice, o, s, k1, k2)).
+
+(* I's view of R at XX_RESP, before R knows who I is (SIGMA-I). *)
+query a: id, o: offer, s: suite, h: bitstring, k1: key, k2: key;
+    inj-event(IFinish(a, bob, o, s, h, k1, k2)) ==> inj-event(RResponded(bob, o, s, h)).
+
+(* Downgrade: I offered both suites, and yet an honest peer's weak suite was accepted. *)
+query a: id, h: bitstring, k1: key, k2: key;
+    event(IFinish(a, bob, offer_both, suite_weak, h, k1, k2)).
+
+(* Sanity: an honest run really completes, so the results above are not vacuous.
+   These two are expected to come back false. *)
+query o: offer, s: suite, k1: key, k2: key; event(IConfirmed(alice, bob, o, s, k1, k2)).
+query o: offer, s: suite, k1: key, k2: key; event(RAccept(alice, bob, o, s, k1, k2)).
+
+process
+    new skca: skey;
+    new ska: skey;
+    new skb: skey;
+    let capk = pk(skca) in
+    let chain_a = cert(alice, pk(ska), skca) in
+    let chain_b = cert(bob, pk(skb), skca) in
+    out(c, (capk, pk(ska), pk(skb), chain_a, chain_b));
+    (
+        (!Initiator(alice, ska, chain_a, capk, false))
+      | (!Responder(alice, ska, chain_a, capk, false))
+      | (!Initiator(bob, skb, chain_b, capk, false))
+      | (!Responder(bob, skb, chain_b, capk, false))
+      | (!Registrar(skca))
+      | (phase 1; out(c, (ska, skb, skca)))
+    )

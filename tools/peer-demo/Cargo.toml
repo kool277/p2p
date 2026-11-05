@@ -1,0 +1,20 @@
+[package]
+name = "peer-demo"
+description = "Two Rust peers over real sockets, for the Phase 1 gate. Not an application."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+crypto-provider = { workspace = true }
+qalqon-core = { workspace = true }
+provider-testonly = { workspace = true }
+qalqon-transport = { workspace = true }
+qalqon-transport-tcp = { workspace = true }
+qalqon-transport-udp = { workspace = true }
+qalqon-ca = { path = "../qalqon-ca" }
+
+
+[lints]
+workspace = true

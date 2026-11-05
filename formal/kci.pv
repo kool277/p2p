@@ -1,0 +1,30 @@
+(* Property 7, key compromise impersonation. The attacker holds one party's identity
+   key from the start and must not be able to impersonate anyone else to that party.
+   Both directions are checked: bob's key leaks and the attacker poses as alice to
+   bob, and alice's key leaks and the attacker poses as bob to alice. *)
+
+query o: offer, s: suite, h: bitstring, k1: key, k2: key;
+    inj-event(RAccept(alice, bob, o, s, k1, k2)) ==> inj-event(IFinish(alice, bob, o, s, h, k1, k2)).
+query o: offer, s: suite, k1: key, k2: key;
+    inj-event(IConfirmed(bob, alice, o, s, k1, k2)) ==> inj-event(RAccept(bob, alice, o, s, k1, k2)).
+
+(* Sanity: expected false, so the two results above are not vacuous. *)
+query o: offer, s: suite, k1: key, k2: key; event(RAccept(alice, bob, o, s, k1, k2)).
+query o: offer, s: suite, k1: key, k2: key; event(IConfirmed(bob, alice, o, s, k1, k2)).
+
+process
+    new skca: skey;
+    new ska: skey;
+    new skb: skey;
+    let capk = pk(skca) in
+    let chain_a = cert(alice, pk(ska), skca) in
+    let chain_b = cert(bob, pk(skb), skca) in
+    (* Bob's key is public. Alice is honest. *)
+    out(c, (capk, pk(ska), pk(skb), chain_a, chain_b, skb));
+    (
+        (!Initiator(alice, ska, chain_a, capk, false))
+      | (!Responder(alice, ska, chain_a, capk, false))
+      | (!Initiator(bob, skb, chain_b, capk, false))
+      | (!Responder(bob, skb, chain_b, capk, false))
+      | (!Registrar(skca))
+    )

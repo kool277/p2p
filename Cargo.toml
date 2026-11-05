@@ -6,13 +6,29 @@ members = [
     "core/crypto-provider",
     "core/crypto-ext",
     "core/provider-testonly",
+    "core/keystore-file",
     "core/qalqon-core",
+    "core/qalqon-audit",
+    "core/qalqon-transport",
+    "core/qalqon-transport-tcp",
+    "core/qalqon-transport-udp",
+    "core/server-core",
+    "tools/qalqon-ca",
+    "tools/peer-demo",
 ]
 default-members = [
     "core/crypto-provider",
     "core/crypto-ext",
     "core/provider-testonly",
+    "core/keystore-file",
     "core/qalqon-core",
+    "core/qalqon-audit",
+    "core/qalqon-transport",
+    "core/qalqon-transport-tcp",
+    "core/qalqon-transport-udp",
+    "core/server-core",
+    "tools/qalqon-ca",
+    "tools/peer-demo",
 ]
 
 [workspace.package]
@@ -26,6 +42,14 @@ crypto-provider = { path = "core/crypto-provider" }
 crypto-ext = { path = "core/crypto-ext" }
 provider-testonly = { path = "core/provider-testonly" }
 qalqon-core = { path = "core/qalqon-core" }
+qalqon-audit = { path = "core/qalqon-audit" }
+qalqon-transport = { path = "core/qalqon-transport" }
+qalqon-transport-tcp = { path = "core/qalqon-transport-tcp" }
+qalqon-transport-udp = { path = "core/qalqon-transport-udp" }
+keystore-file = { path = "core/keystore-file" }
+server-core = { path = "core/server-core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 zeroize = { version = "1.9", default-features = false, features = ["alloc"] }
 subtle = { version = "2.6", default-features = false }
 

@@ -489,6 +489,8 @@ pub struct Stats {
     pub bytes_received: u64,
     /// Frames dropped on a lossy transport.
     pub frames_dropped: u64,
+    /// How many times either direction moved to a new epoch.
+    pub keys_rotated: u64,
 }
 
 /// One session. See the module documentation.
@@ -929,6 +931,7 @@ impl Session {
             self.events.push_back(Event::PeerConfirmed);
         }
         if opened.epoch_advanced {
+            self.stats.keys_rotated += 1;
             self.events.push_back(Event::KeysRotated {
                 send: false,
                 epoch: epoch_now,
@@ -1046,6 +1049,7 @@ impl Session {
             .map_err(|_| ErrorCode::InvalidState)?;
         self.tx.push_back(frame);
         self.stats.records_sent += 1;
+        self.stats.keys_rotated += 1;
         self.events
             .push_back(Event::KeysRotated { send: true, epoch });
         Ok(())
@@ -1319,6 +1323,7 @@ impl Session {
                 return self.abort(now_ms, reason::PROTOCOL_ERROR);
             }
             let epoch_now = record.recv_epoch();
+            self.stats.keys_rotated += 1;
             self.events.push_back(Event::KeysRotated {
                 send: false,
                 epoch: epoch_now,

@@ -1,0 +1,64 @@
+(* A negative control. This models the two-message IK-style flow that
+   docs/PROTOCOL.md, section 1, rejects: I signs in its first message, before R has
+   contributed anything, and the ephemeral is exposed by one leak.
+
+   Both queries are expected to come back FALSE, which reproduces the reason given in
+   the specification and shows this tool can see the attack. The XX flow is checked
+   against the same leak in ephemeral_leak.pv. *)
+
+set traceDisplay = none.
+
+free c: channel.
+type exponent.
+type G.
+type skey.
+type pkey.
+type key.
+type id.
+const g: G [data].
+fun exp(G, exponent): G.
+equation forall x: exponent, y: exponent; exp(exp(g, x), y) = exp(exp(g, y), x).
+fun H(bitstring): bitstring.
+fun extract(G): key.
+fun aead(bitstring, key): bitstring.
+reduc forall m: bitstring, k: key; open(aead(m, k), k) = m.
+fun pk(skey): pkey.
+fun sign(bitstring, skey): bitstring.
+reduc forall m: bitstring, k: skey; checksign(sign(m, k), pk(k), m) = true.
+
+free alice: id.
+free bob: id.
+free reply_for_alice: bitstring [private].
+
+event ISent(id, id, G).
+event RAccept(id, id, G, G).
+
+(* An attacker who learned one ephemeral reads what R sends to "alice". *)
+query attacker(reply_for_alice).
+(* R accepts a session alice never started, by replay. *)
+query b: id, gx: G, gy: G;
+    inj-event(RAccept(alice, b, gx, gy)) ==> inj-event(ISent(alice, b, gx)).
+
+let Initiator(skme: skey) =
+    in(c, peer: id);
+    new x: exponent;
+    let gx = exp(g, x) in
+    let sig_i = sign((alice, peer, gx), skme) in
+    event ISent(alice, peer, gx);
+    out(c, (gx, sig_i));
+    (* The leak of this session's ephemeral. *)
+    out(c, x).
+
+let Responder(pka: pkey) =
+    in(c, (gx: G, sig_i: bitstring));
+    if checksign(sig_i, pka, (alice, bob, gx)) = true then
+    new y: exponent;
+    let gy = exp(g, y) in
+    event RAccept(alice, bob, gx, gy);
+    let k = extract(exp(gx, y)) in
+    out(c, (gy, aead(reply_for_alice, k))).
+
+process
+    new ska: skey;
+    out(c, pk(ska));
+    (!Initiator(ska)) | (!Responder(pk(ska)))

@@ -1,0 +1,17 @@
+[package]
+name = "keystore-file"
+description = "A key store for mounted secrets: keys wrapped under a key-encryption key in a 0600 file."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+crypto-provider = { workspace = true }
+
+[dev-dependencies]
+provider-testonly = { workspace = true }
+
+
+[lints]
+workspace = true

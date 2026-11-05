@@ -1,0 +1,16 @@
+[package]
+name = "qalqon-ca"
+description = "The CA and key ceremony tool. Issues the certificate hierarchy from docs/PROTOCOL.md, section 11."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+crypto-provider = { workspace = true }
+qalqon-core = { workspace = true }
+provider-testonly = { workspace = true }
+
+
+[lints]
+workspace = true
