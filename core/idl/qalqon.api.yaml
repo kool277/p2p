@@ -1,0 +1,546 @@
+# Qalqon public API definition, IDL v0.
+#
+# This is the single source of truth for the public API (build prompt §1.7).
+# Generators arrive in Phase 2 and will produce the UniFFI .udl, the Rust ABI
+# glue behind qalqon.h, the WIT file, the JSON-RPC schema and docs/SDK-API.md.
+#
+# Status: proposal for the Phase 0 gate. See docs/adr/0002-core-and-ffi-strategy.md.
+#
+# Conventions
+#   Names are lowerCamelCase for members and UpperCamelCase for types. Generators
+#   change only the casing, to fit each language.
+#   Built-in types: bool, u16, u32, u64, string, bytes. "T?" is optional, "list<T>" a list.
+#   Quote those two forms, because not every YAML parser accepts them bare.
+#   async: true means the call does network I/O. Each binding exposes it in its
+#   own idiom: a promise, a coroutine, or a blocking call in C.
+#   Keys never appear in this API. Only handles and public fingerprints do.
+
+idl_version: 0
+api_version: "0.1.0"
+protocol_version: "0.1"
+
+errors:
+  ok:                   {code: 0,   doc: "Success. Never raised as an error."}
+  invalidArgument:      {code: 1,   doc: "An argument is malformed or out of range."}
+  invalidState:         {code: 2,   doc: "The call is not valid in the object's current state."}
+  timeout:              {code: 3,   doc: "The operation did not finish in time."}
+  closed:               {code: 4,   doc: "The session or channel is closed."}
+  unsupported:          {code: 5,   doc: "This build or platform does not support the operation."}
+  internal:             {code: 6,   doc: "An internal fault. A panic inside the core surfaces as this code."}
+  transportFailed:      {code: 100, doc: "The transport could not connect or was lost."}
+  transportUnsupported: {code: 101, doc: "No available transport can satisfy the requested channel options."}
+  peerUnavailable:      {code: 102, doc: "The peer is offline, declined, or hidden by policy. These cases are deliberately not distinguished."}
+  peerUnreachable:      {code: 103, doc: "No path to the peer exists under the current relay policy."}
+  messageTooLarge:      {code: 104, doc: "The message exceeds the reassembly limit."}
+  handshakeFailed:      {code: 200, doc: "The handshake failed. The cause is deliberately not distinguished here; the local audit log records it."}
+  versionMismatch:      {code: 201, doc: "The two sides share no protocol version."}
+  suiteMismatch:        {code: 202, doc: "The two sides share no cipher suite."}
+  peerIdentityChanged:  {code: 203, doc: "The peer's identity key differs from its pin, or a user who is already pinned presented a new device."}
+  peerRevoked:          {code: 204, doc: "The peer's certificate is revoked or expired."}
+  revocationDataStale:  {code: 205, doc: "The local CRL is too old to allow a new session."}
+  authenticationFailed: {code: 300, doc: "Login failed. Unknown user and wrong secret are deliberately not distinguished."}
+  mfaRequired:          {code: 301, doc: "Login needs an MFA code. Retry with mfaCode set."}
+  rateLimited:          {code: 302, doc: "Too many attempts. Try again later."}
+  accessDenied:         {code: 303, doc: "Policy denies this operation."}
+  notEnrolled:          {code: 304, doc: "This device has no valid certificate. Call enrollDevice first."}
+  enrollmentRejected:   {code: 305, doc: "The enrolment token was rejected."}
+  keyStoreUnavailable:  {code: 400, doc: "The platform key store cannot be reached."}
+  selfTestFailed:       {code: 401, doc: "A known-answer self-test failed at module load, so the module refuses to operate."}
+  integrityCheckFailed: {code: 402, doc: "A binary does not match the signed manifest."}
+  auditUnavailable:     {code: 500, doc: "The audit log cannot be written, so the audited operation was refused."}
+
+enums:
+  RelayPolicy:
+    doc: "How a session reaches a peer."
+    values:
+      preferDirect: "Try a direct path first and fall back to the blind relay."
+      directOnly: "Never use the relay. Fail with peerUnreachable if no direct path exists."
+      relayOnly: "Always use the relay. Interop tests use this to exercise the relay path."
+  IdentityChangePolicy:
+    doc: "What happens when a peer's identity key differs from its pin."
+    values:
+      block: "Refuse the session until the user re-verifies. This is the default."
+      warn: "Raise peerIdentityChanged as an event and continue."
+  VerificationStatus:
+    doc: "How far a peer's identity has been checked."
+    values:
+      unverified: "Never seen before, so nothing is pinned yet."
+      pinned: "Pinned on first use, and not compared out of band."
+      verified: "The user compared the safety number out of band."
+      changed: "The identity key differs from the pin, or this is a new device of a user who is already pinned."
+  SessionState:
+    doc: "The state of a client session."
+    values:
+      connecting: "The control plane is being established."
+      connected: "Logged in and ready."
+      reconnecting: "The control plane was lost and is being restored."
+      closed: "The session has ended."
+  PathKind:
+    doc: "How a channel's frames reach the peer."
+    values:
+      direct: "Peer to peer, with no relay."
+      relayed: "Through the blind relay, which sees only ciphertext."
+  KeyStoreKind:
+    doc: "Where long-term keys are held."
+    values:
+      osDefault: "The platform key store chosen for this target in targets.yaml."
+      external: "A store named by a URI, such as an HSM."
+  LinkKind:
+    doc: "What an external transport link connects to."
+    values:
+      server: "The control plane connection to a host."
+      peer: "A data plane connection to another client."
+  Severity:
+    doc: "The severity of an alarm."
+    values:
+      info: "Informational."
+      warning: "Needs attention."
+      critical: "A likely breach attempt or integrity failure."
+  StoreKind:
+    doc: "Which Host SPI store an effect addresses."
+    values:
+      user: "UserStore."
+      device: "DeviceStore."
+      policy: "PolicyStore."
+      audit: "AuditSink."
+  StoreOperation:
+    doc: "The operation a store effect requests."
+    values:
+      get: "Read one record by key."
+      put: "Create or replace one record."
+      list: "Read a page of records, with the cursor in key."
+      append: "Append one row. AuditSink only."
+      head: "Read the latest row. AuditSink only."
+      range: "Read rows in a range, with the bounds in key. AuditSink only."
+
+records:
+  KeyStoreConfig:
+    doc: "Selects the key store. Holds references only, never key material."
+    fields:
+      kind: {type: KeyStoreKind, doc: "The kind of store."}
+      uri: {type: "string?", doc: "The store's location when kind is external."}
+  SessionConfig:
+    doc: "Everything needed to start a client session."
+    fields:
+      serverUrl: {type: string, doc: "The host's control plane, such as wss://host/qalqon. Its host name must match the server's certificate."}
+      caBundle: {type: bytes, doc: "The trusted root certificates."}
+      keyStore: {type: KeyStoreConfig, doc: "Where this device's keys are held."}
+      dataDir: {type: "string?", doc: "The directory for pins and the audit chain. Not used on web."}
+      relayPolicy: {type: "RelayPolicy?", doc: "Defaults to preferDirect."}
+      identityChangePolicy: {type: "IdentityChangePolicy?", doc: "Defaults to block."}
+      revocationGraceMs: {type: "u64?", doc: "How long past a CRL's next update new peer sessions are still allowed. Defaults to 72 hours. This is local, and server policy cannot change it."}
+      externalTransport: {type: "ExternalTransport?", doc: "Set this where the application owns the sockets, such as in a browser. Unset, the SDK uses its built-in transports."}
+  Credentials:
+    doc: "Login details. The secret goes only to the host, inside the Qalqon channel."
+    fields:
+      userId: {type: string, doc: "The user's identifier."}
+      secret: {type: bytes, doc: "The user's password."}
+      mfaCode: {type: "string?", doc: "An MFA code, when required."}
+  EnrollmentRequest:
+    doc: "Registers this device with a host."
+    fields:
+      enrollmentToken: {type: string, doc: "A one-time token from the administrator."}
+      deviceName: {type: string, doc: "A human-readable device name."}
+  EnrollmentResult:
+    doc: "The outcome of enrolment."
+    fields:
+      deviceId: {type: string, doc: "The identifier assigned to this device."}
+      fingerprint: {type: string, doc: "This device's public fingerprint, in hex."}
+      certificateExpiresAtMs: {type: u64, doc: "When the certificate expires, in milliseconds since the Unix epoch."}
+  PeerRef:
+    doc: "Names a peer."
+    fields:
+      userId: {type: string, doc: "The peer's user."}
+      deviceId: {type: "string?", doc: "A specific device. Unset, the host picks an online device, which the pin check still applies to."}
+  PeerIdentity:
+    doc: "What is known about a peer's identity."
+    fields:
+      userId: {type: string, doc: "The peer's user."}
+      deviceId: {type: string, doc: "The peer's device."}
+      fingerprint: {type: string, doc: "The peer's public fingerprint, in hex."}
+      safetyNumber: {type: string, doc: "60 digits for both people to compare out of band."}
+      status: {type: VerificationStatus, doc: "How far this identity has been checked."}
+  ChannelOptions:
+    doc: "Requirements for a new channel."
+    fields:
+      label: {type: string, doc: "An application-chosen name, at most 255 bytes."}
+      ordered: {type: bool, doc: "Messages must arrive in order."}
+      reliable: {type: bool, doc: "Messages must not be lost. Fails with transportUnsupported if no transport can do this."}
+      timeoutMs: {type: "u32?", doc: "How long to wait for the peer. Defaults to 30000."}
+  ChannelInfo:
+    doc: "The current state of a channel."
+    fields:
+      channelId: {type: u16, doc: "The channel's identifier within its session."}
+      peer: {type: PeerIdentity, doc: "The peer on the other end."}
+      path: {type: PathKind, doc: "The current path."}
+      keyEpoch: {type: u16, doc: "The current send key epoch."}
+  AuditExportRequest:
+    doc: "Selects audit events to export."
+    fields:
+      fromMs: {type: "u64?", doc: "The start of the range. Unset, from the first event."}
+      toMs: {type: "u64?", doc: "The end of the range. Unset, to the latest event."}
+  AuditExport:
+    doc: "A verifiable export of the local audit chain."
+    fields:
+      events: {type: bytes, doc: "The events as JSON Lines."}
+      chainHead: {type: bytes, doc: "The chain's latest entry."}
+      checkpointSignature: {type: bytes, doc: "The signed checkpoint covering chainHead."}
+  TransportCaps:
+    doc: "What an external link can do."
+    fields:
+      ordered: {type: bool, doc: "Frames arrive in order."}
+      reliable: {type: bool, doc: "Frames are not lost."}
+      maxFrameLen: {type: u32, doc: "The largest frame the link can carry, in bytes."}
+  ServerConfig:
+    doc: "Configuration a host loads and hands to the server core. Holds references only, never key material."
+    fields:
+      identityKeyRef: {type: string, doc: "A reference to the server's identity key: a file path, a PKCS#11 URI or a sealed blob. The core opens it, so the host never holds the key's bytes."}
+      caBundle: {type: bytes, doc: "The trusted root certificates."}
+      relayAddresses: {type: "list<string>", doc: "The relay and TURN addresses to hand to clients."}
+      policy: {type: bytes, doc: "The initial policy document, as JSON."}
+  ConnectionMeta:
+    doc: "What a host knows about an accepted connection."
+    fields:
+      remoteAddress: {type: string, doc: "The peer's network address, for audit and rate limits."}
+  HealthSnapshot:
+    doc: "The server core's health, for a host's health endpoints."
+    fields:
+      live: {type: bool, doc: "The core is running."}
+      ready: {type: bool, doc: "Self-tests passed, the identity key is open and the stores responded."}
+      detail: {type: string, doc: "A short reason when not ready."}
+  MetricsSnapshot:
+    doc: "Counters for a host's metrics endpoint, in Prometheus text format."
+    fields:
+      text: {type: string, doc: "The formatted metrics."}
+
+variants:
+  Event:
+    doc: "Something a client session reports. Adapters turn these into hooks, signals, streams and so on."
+    cases:
+      stateChanged:
+        doc: "The session changed state."
+        fields:
+          state: {type: SessionState, doc: "The new state."}
+      channelRequested:
+        doc: "A peer wants to open a channel. Answer with acceptChannel or rejectChannel."
+        fields:
+          requestId: {type: string, doc: "Pass this to acceptChannel or rejectChannel."}
+          peer: {type: PeerIdentity, doc: "Who is asking."}
+          options: {type: ChannelOptions, doc: "What they asked for."}
+      channelOpened:
+        doc: "A channel is ready."
+        fields:
+          channelId: {type: u16, doc: "The channel."}
+      channelClosed:
+        doc: "A channel ended."
+        fields:
+          channelId: {type: u16, doc: "The channel."}
+          clean: {type: bool, doc: "False means the transport ended without an authenticated close, so data may have been cut off."}
+      messageAvailable:
+        doc: "A channel has a message ready for receive."
+        fields:
+          channelId: {type: u16, doc: "The channel."}
+      peerIdentityChanged:
+        doc: "A peer's identity key differs from its pin, or a pinned user presented a new device."
+        fields:
+          peer: {type: PeerIdentity, doc: "The peer, with the new fingerprint."}
+      pathChanged:
+        doc: "A peer's path changed."
+        fields:
+          peer: {type: PeerRef, doc: "The peer."}
+          path: {type: PathKind, doc: "The new path."}
+      keysRotated:
+        doc: "Traffic keys moved to a new epoch."
+        fields:
+          peer: {type: PeerRef, doc: "The peer."}
+          epoch: {type: u16, doc: "The new epoch."}
+      auditAlarm:
+        doc: "A possible breach attempt was detected."
+        fields:
+          severity: {type: Severity, doc: "How serious it is."}
+          summary: {type: string, doc: "A short description, containing no secrets."}
+  TransportCommand:
+    doc: "Something the core asks an external transport to do."
+    cases:
+      openLink:
+        doc: "Open a link."
+        fields:
+          linkId: {type: u64, doc: "The identifier to use for this link."}
+          kind: {type: LinkKind, doc: "What to connect to."}
+          url: {type: "string?", doc: "The address, for a server link."}
+      sendFrame:
+        doc: "Send a frame on a link."
+        fields:
+          linkId: {type: u64, doc: "The link."}
+          frame: {type: bytes, doc: "The frame, which is already ciphertext or a handshake message."}
+      sendSignal:
+        doc: "Deliver connectivity data from the core to the platform's WebRTC stack."
+        fields:
+          linkId: {type: u64, doc: "The link."}
+          blob: {type: bytes, doc: "Opaque SDP or ICE data."}
+      closeLink:
+        doc: "Close a link."
+        fields:
+          linkId: {type: u64, doc: "The link."}
+  Effect:
+    doc: "Something the server core asks a host to do. See docs/HOST-SPI.md."
+    cases:
+      sendFrame:
+        doc: "Send a frame on a connection. No completion is needed."
+        fields:
+          connId: {type: u64, doc: "The connection."}
+          frame: {type: bytes, doc: "The frame."}
+      closeConnection:
+        doc: "Close a connection. No completion is needed."
+        fields:
+          connId: {type: u64, doc: "The connection."}
+          code: {type: u16, doc: "The close code."}
+      store:
+        doc: "Perform a store operation, then call completeEffect."
+        fields:
+          effectId: {type: u64, doc: "Pass this to completeEffect."}
+          store: {type: StoreKind, doc: "Which store."}
+          operation: {type: StoreOperation, doc: "Which operation."}
+          key: {type: "string?", doc: "The key, cursor or range."}
+          record: {type: "bytes?", doc: "The record to write, as JSON."}
+      alarm:
+        doc: "Raise an alarm to the security administrator. No completion is needed."
+        fields:
+          severity: {type: Severity, doc: "How serious it is."}
+          summary: {type: string, doc: "A short description, containing no secrets."}
+
+functions:
+  enrollDevice:
+    async: true
+    doc: "Registers this device with a host. Generates the identity key if needed."
+    params:
+      config: {type: SessionConfig, doc: "Connection settings."}
+      request: {type: EnrollmentRequest, doc: "The token and device name."}
+    returns: EnrollmentResult
+    errors: [invalidArgument, timeout, transportFailed, handshakeFailed, enrollmentRejected, rateLimited, keyStoreUnavailable, selfTestFailed, integrityCheckFailed]
+  connect:
+    async: true
+    doc: "Connects to a host, authenticates and logs in. Runs self-tests on first use."
+    params:
+      config: {type: SessionConfig, doc: "Connection settings."}
+      credentials: {type: Credentials, doc: "Login details."}
+    returns: Session
+    errors: [invalidArgument, timeout, transportFailed, handshakeFailed, versionMismatch, suiteMismatch, peerRevoked, authenticationFailed, mfaRequired, rateLimited, notEnrolled, keyStoreUnavailable, selfTestFailed, integrityCheckFailed, auditUnavailable]
+  createExternalTransport:
+    async: false
+    doc: "Creates a transport that the application drives. Pass it in SessionConfig before calling connect."
+    params: {}
+    returns: ExternalTransport
+    errors: [unsupported]
+  createServerCore:
+    async: false
+    doc: "Creates the server core inside a host. See docs/HOST-SPI.md."
+    params:
+      config: {type: ServerConfig, doc: "The host's configuration."}
+    returns: ServerCore
+    errors: [invalidArgument, keyStoreUnavailable, selfTestFailed, integrityCheckFailed]
+
+interfaces:
+  Session:
+    doc: "A logged-in connection to a host. Owns the channels and direct peer sessions."
+    methods:
+      openChannel:
+        async: true
+        doc: "Opens a channel to a peer, running rendezvous and the end-to-end handshake if needed."
+        params:
+          peer: {type: PeerRef, doc: "Who to connect to."}
+          options: {type: ChannelOptions, doc: "What the channel must provide."}
+        returns: Channel
+        errors: [invalidArgument, timeout, closed, transportFailed, transportUnsupported, peerUnavailable, peerUnreachable, handshakeFailed, versionMismatch, suiteMismatch, peerIdentityChanged, peerRevoked, revocationDataStale, accessDenied, auditUnavailable]
+      acceptChannel:
+        async: true
+        doc: "Accepts a channel the peer requested in a channelRequested event."
+        params:
+          requestId: {type: string, doc: "From the event."}
+        returns: Channel
+        errors: [invalidArgument, invalidState, timeout, closed, transportFailed, transportUnsupported, peerUnreachable, handshakeFailed, peerIdentityChanged, peerRevoked, revocationDataStale, auditUnavailable]
+      rejectChannel:
+        async: false
+        doc: "Declines a channel the peer requested. The peer only sees peerUnavailable."
+        params:
+          requestId: {type: string, doc: "From the event."}
+        returns: null
+        errors: [invalidArgument, invalidState, closed]
+      verifyPeer:
+        async: false
+        doc: "Returns a peer's identity for display. Given a safety number, compares it in constant time and records the peer as verified if it matches."
+        params:
+          peer: {type: PeerRef, doc: "The peer."}
+          safetyNumber: {type: "string?", doc: "The number the user compared out of band."}
+        returns: PeerIdentity
+        errors: [invalidArgument, closed, peerUnavailable]
+      rotateKeys:
+        async: true
+        doc: "Moves traffic keys to a new epoch in both directions, for one peer or for all. Completes when the peer has moved too."
+        params:
+          peer: {type: "PeerRef?", doc: "The peer. Unset, all peers."}
+        returns: null
+        errors: [invalidState, timeout, closed, auditUnavailable]
+      exportAudit:
+        async: false
+        doc: "Exports the local audit chain so it can be verified elsewhere."
+        params:
+          request: {type: AuditExportRequest, doc: "The range to export."}
+        returns: AuditExport
+        errors: [invalidArgument, closed, accessDenied, auditUnavailable]
+      nextEvent:
+        async: true
+        doc: "Waits for the next event. Adapters run this in a loop and translate events into their framework's idiom."
+        params:
+          timeoutMs: {type: u32, doc: "How long to wait. 0 returns at once."}
+        returns: "Event?"
+        errors: [closed]
+      close:
+        async: true
+        doc: "Closes all channels with an authenticated close, then logs out."
+        params: {}
+        returns: null
+        errors: [timeout]
+  Channel:
+    doc: "An encrypted channel to one peer, multiplexed over their end-to-end session."
+    methods:
+      send:
+        async: true
+        doc: "Sends one message. The core fragments it if needed."
+        params:
+          payload: {type: bytes, doc: "The plaintext message."}
+        returns: null
+        errors: [invalidArgument, timeout, closed, transportFailed, messageTooLarge]
+      receive:
+        async: true
+        doc: "Waits for the next message. Returns nothing if the timeout passes first."
+        params:
+          timeoutMs: {type: u32, doc: "How long to wait. 0 returns at once."}
+        returns: "bytes?"
+        errors: [closed, transportFailed, messageTooLarge]
+      info:
+        async: false
+        doc: "Returns the channel's peer, path and key epoch."
+        params: {}
+        returns: ChannelInfo
+        errors: [closed]
+      close:
+        async: true
+        doc: "Closes this channel. Other channels to the same peer stay open."
+        params: {}
+        returns: null
+        errors: [timeout]
+  ExternalTransport:
+    doc: "Lets an adapter own the sockets, as browsers and mobile WebRTC require. The adapter polls for commands and reports what happens. Frames are already encrypted, so the adapter never sees keys or plaintext."
+    methods:
+      pollCommand:
+        async: true
+        doc: "Waits for the next command from the core."
+        params:
+          timeoutMs: {type: u32, doc: "How long to wait. 0 returns at once."}
+        returns: "TransportCommand?"
+        errors: [closed]
+      linkOpened:
+        async: false
+        doc: "Reports that a link is up."
+        params:
+          linkId: {type: u64, doc: "The link."}
+          caps: {type: TransportCaps, doc: "What the link can do."}
+        returns: null
+        errors: [invalidArgument, closed]
+      linkClosed:
+        async: false
+        doc: "Reports that a link has ended."
+        params:
+          linkId: {type: u64, doc: "The link."}
+        returns: null
+        errors: [invalidArgument, closed]
+      frameReceived:
+        async: false
+        doc: "Hands the core a frame that arrived on a link."
+        params:
+          linkId: {type: u64, doc: "The link."}
+          frame: {type: bytes, doc: "The frame."}
+        returns: null
+        errors: [invalidArgument, closed]
+      signalReceived:
+        async: false
+        doc: "Hands the core connectivity data from the platform's WebRTC stack."
+        params:
+          linkId: {type: u64, doc: "The link."}
+          blob: {type: bytes, doc: "Opaque SDP or ICE data."}
+        returns: null
+        errors: [invalidArgument, closed]
+  ServerCore:
+    doc: "The server side of the protocol, embedded by every host. See docs/HOST-SPI.md."
+    methods:
+      accept:
+        async: false
+        doc: "Registers an accepted WebSocket connection and returns its identifier."
+        params:
+          meta: {type: ConnectionMeta, doc: "What the host knows about the connection."}
+        returns: u64
+        errors: [rateLimited, closed]
+      onFrame:
+        async: false
+        doc: "Hands the core a frame from a connection. Returns quickly. Results surface as effects."
+        params:
+          connId: {type: u64, doc: "The connection."}
+          frame: {type: bytes, doc: "The frame."}
+        returns: null
+        errors: [invalidArgument, closed]
+      onClose:
+        async: false
+        doc: "Reports that a connection has ended."
+        params:
+          connId: {type: u64, doc: "The connection."}
+        returns: null
+        errors: [invalidArgument, closed]
+      tick:
+        async: false
+        doc: "Drives timers. Call this about once a second."
+        params:
+          nowMs: {type: u64, doc: "The current time, in milliseconds since the Unix epoch."}
+        returns: null
+        errors: [closed]
+      pollEffect:
+        async: false
+        doc: "Returns the next thing the host must do, or nothing when there is no work."
+        params: {}
+        returns: "Effect?"
+        errors: [closed]
+      completeEffect:
+        async: false
+        doc: "Reports the result of a store effect."
+        params:
+          effectId: {type: u64, doc: "From the effect."}
+          status: {type: u32, doc: "0 for success, otherwise an error code from this API."}
+          record: {type: "bytes?", doc: "The record that was read, as JSON."}
+        returns: null
+        errors: [invalidArgument, closed]
+      adminCall:
+        async: false
+        doc: "Runs an admin operation after the host has authenticated the caller. See docs/HOST-SPI.md."
+        params:
+          method: {type: string, doc: "The admin method's name."}
+          paramsJson: {type: string, doc: "The parameters, as JSON."}
+        returns: string
+        errors: [invalidArgument, accessDenied, closed, auditUnavailable]
+      health:
+        async: false
+        doc: "Returns liveness and readiness."
+        params: {}
+        returns: HealthSnapshot
+        errors: []
+      metrics:
+        async: false
+        doc: "Returns counters, including direct versus relayed sessions and handshake failures."
+        params: {}
+        returns: MetricsSnapshot
+        errors: []
+      shutdown:
+        async: false
+        doc: "Stops the core and zeroizes its secrets."
+        params: {}
+        returns: null
+        errors: []

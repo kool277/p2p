@@ -1,0 +1,55 @@
+# Every operating system and CPU this repository builds for (build prompt §1.7).
+#
+# Adding an OS takes three edits: a target here, a packaging recipe in
+# tools/packaging/, and a CI runner. Every binding then inherits the target.
+# Nothing builds yet. This file states the intended matrix.
+#
+# tier: primary    built and packaged on release
+#       community  the core must build, packaging is optional
+
+schema: 0
+
+targets:
+  - { id: windows-x64,       os: windows,   min_os: "10",  triple: x86_64-pc-windows-msvc,          tier: primary,   key_storage: [dpapi, cng] }
+  - { id: windows-x64-gnu,   os: windows,   min_os: "10",  triple: x86_64-pc-windows-gnu,           tier: primary,   key_storage: [dpapi, cng] }
+  - { id: windows-arm64,     os: windows,   min_os: "11",  triple: aarch64-pc-windows-msvc,         tier: primary,   key_storage: [dpapi, cng] }
+
+  - { id: linux-x64,         os: linux,     min_os: "glibc 2.17", triple: x86_64-unknown-linux-gnu,        tier: primary, key_storage: [secret-service, tpm-optional] }
+  - { id: linux-arm64,       os: linux,     min_os: "glibc 2.17", triple: aarch64-unknown-linux-gnu,       tier: primary, key_storage: [secret-service, tpm-optional] }
+  - { id: linux-armv7,       os: linux,     min_os: "glibc 2.17", triple: armv7-unknown-linux-gnueabihf,   tier: primary, key_storage: [secret-service, tpm-optional] }
+  - { id: linux-x64-musl,    os: linux,     min_os: "musl",       triple: x86_64-unknown-linux-musl,       tier: primary, key_storage: [mounted-secret] }
+  - { id: linux-arm64-musl,  os: linux,     min_os: "musl",       triple: aarch64-unknown-linux-musl,      tier: primary, key_storage: [mounted-secret] }
+
+  - { id: macos-arm64,       os: macos,     min_os: "13",  triple: aarch64-apple-darwin,            tier: primary,   key_storage: [keychain, secure-enclave] }
+  - { id: macos-x64,         os: macos,     min_os: "13",  triple: x86_64-apple-darwin,             tier: primary,   key_storage: [keychain] }
+
+  - { id: ios-arm64,         os: ios,       min_os: "15",  triple: aarch64-apple-ios,               tier: primary,   key_storage: [secure-enclave] }
+  - { id: ios-sim-arm64,     os: ios,       min_os: "15",  triple: aarch64-apple-ios-sim,           tier: primary,   key_storage: [keychain] }
+  - { id: ios-sim-x64,       os: ios,       min_os: "15",  triple: x86_64-apple-ios,                tier: primary,   key_storage: [keychain] }
+
+  - { id: android-arm64,     os: android,   min_os: "API 28", triple: aarch64-linux-android,        tier: primary,   key_storage: [keystore, strongbox] }
+  - { id: android-armv7,     os: android,   min_os: "API 28", triple: armv7-linux-androideabi,      tier: primary,   key_storage: [keystore, strongbox] }
+  - { id: android-x64,       os: android,   min_os: "API 28", triple: x86_64-linux-android,         tier: primary,   key_storage: [keystore] }
+
+  - { id: web,               os: web,       min_os: "evergreen browsers", triple: wasm32-unknown-unknown, tier: primary, key_storage: [webcrypto-indexeddb] }
+  - { id: wasi,              os: wasi,      min_os: "wasip1",  triple: wasm32-wasip1,               tier: primary,   key_storage: [host-provided] }
+
+  # Containers reuse the musl builds above.
+  - { id: containers-x64,    os: container, min_os: "linux", triple: x86_64-unknown-linux-musl,     tier: primary,   key_storage: [mounted-secret, hsm] }
+  - { id: containers-arm64,  os: container, min_os: "linux", triple: aarch64-unknown-linux-musl,    tier: primary,   key_storage: [mounted-secret, hsm] }
+
+  - { id: freebsd-x64,       os: freebsd,   min_os: "any", triple: x86_64-unknown-freebsd,          tier: community, key_storage: [os-keyring] }
+  - { id: freebsd-arm64,     os: freebsd,   min_os: "any", triple: aarch64-unknown-freebsd,         tier: community, key_storage: [os-keyring] }
+  - { id: openbsd-x64,       os: openbsd,   min_os: "any", triple: x86_64-unknown-openbsd,          tier: community, key_storage: [os-keyring] }
+  - { id: openbsd-arm64,     os: openbsd,   min_os: "any", triple: aarch64-unknown-openbsd,         tier: community, key_storage: [os-keyring] }
+
+  - { id: embedded-arm64,    os: embedded-linux, min_os: "any", triple: aarch64-unknown-linux-musl,    tier: community, key_storage: [application-defined] }
+  - { id: embedded-armv7,    os: embedded-linux, min_os: "any", triple: armv7-unknown-linux-musleabihf, tier: community, key_storage: [application-defined] }
+  - { id: embedded-riscv64,  os: embedded-linux, min_os: "any", triple: riscv64gc-unknown-linux-musl,   tier: community, key_storage: [application-defined] }
+
+  # no_std builds of the core, given an allocator.
+  - { id: nostd-arm64,       os: none, min_os: "none", triple: aarch64-unknown-none,      tier: community, key_storage: [application-defined] }
+  - { id: nostd-armv7,       os: none, min_os: "none", triple: armv7a-none-eabi,          tier: community, key_storage: [application-defined] }
+  - { id: nostd-riscv64,     os: none, min_os: "none", triple: riscv64gc-unknown-none-elf, tier: community, key_storage: [application-defined] }
+
+  - { id: harmonyos-arm64,   os: harmonyos, min_os: "any", triple: aarch64-unknown-linux-ohos,      tier: community, key_storage: [platform-keystore] }
