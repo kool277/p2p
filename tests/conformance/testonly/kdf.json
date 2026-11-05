@@ -1,0 +1,58 @@
+{
+  "kind": "kdf",
+  "provider": "testonly",
+  "vectors": [
+    {
+      "context": "",
+      "label": "key",
+      "length": 32,
+      "name": "expand_label 0: key",
+      "op": "expand_label",
+      "output": "8d32ee209b244a16bc4eb46b4aa0bb19be2eb064979d268832840d5c117ea006",
+      "secret": "6e01b950c4ac9603723b44a5f351aaf16acba58b41e140d7f48deda9b1334a87"
+    },
+    {
+      "context": "",
+      "label": "iv",
+      "length": 12,
+      "name": "expand_label 1: iv",
+      "op": "expand_label",
+      "output": "f80bcd6fb1b48ab0c8272b54",
+      "secret": "41e95089fb9d1f610f6427b6640a3e35a93049680729d6384c30c9c37c7c3c60"
+    },
+    {
+      "context": "abababababababababababababababababababababababababababababababab",
+      "label": "session id",
+      "length": 16,
+      "name": "expand_label 2: session id",
+      "op": "expand_label",
+      "output": "03ef601a71ee47bcee2646733a8e223f",
+      "secret": "90628a96a96d287cc4811d471a0d0cf7f375f9228054620842f4e2ca45a46308"
+    },
+    {
+      "context": "",
+      "label": "safety",
+      "length": 60,
+      "name": "expand_label 3: safety",
+      "op": "expand_label",
+      "output": "094cfc4fb487e95e2875595f111fffdfef51a83d24b73e2872a44d640f25fea612d8fa8bdae978a8d6e27e553eaf66e94e51df5eaca1d34360e6580d",
+      "secret": "83992b5c649ef89545812c928156bf8dcd4dc8897ed8425f06168ccc7f0217d0"
+    },
+    {
+      "label": "i hs",
+      "name": "derive_secret",
+      "op": "derive_secret",
+      "output": "8af7d2f9fb870e0c8e69608b38562b20f2a29973446ce162da304400f6f44651",
+      "secret": "7f99eb50f8156212a76b6ef2b09dc35724512a59951bd520592e13ec9c1369fe",
+      "transcript": "61207472616e736372697074"
+    },
+    {
+      "direction": 1,
+      "iv": "101112131415161718191a1b",
+      "name": "record_nonce",
+      "op": "record_nonce",
+      "output": "101112121414161718191a1e",
+      "seq": "0001000000000005"
+    }
+  ]
+}

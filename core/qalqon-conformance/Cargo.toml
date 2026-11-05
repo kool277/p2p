@@ -1,0 +1,18 @@
+[package]
+name = "qalqon-conformance"
+description = "Generates and checks the shared vectors in tests/conformance. Every binding runs the check through its own runtime."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+crypto-provider = { workspace = true }
+provider-testonly = { workspace = true }
+qalqon-core = { workspace = true }
+qalqon-audit = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[lints]
+workspace = true

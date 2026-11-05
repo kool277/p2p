@@ -1,0 +1,24 @@
+{
+  "kind": "safety",
+  "provider": "testonly",
+  "vectors": [
+    {
+      "a": "a83818ff93671969c354afeef2560c5bcfb6bc08b2a2b003b5ce27ef7b5ef879",
+      "b": "c597b5ea25b7b4aab4a5726a9bb66f3d04a6bc690a9914a3e7d7a5f1d894a882",
+      "name": "safety number 0",
+      "number": "315863104922673782484893348482448518393893703580843627587530"
+    },
+    {
+      "a": "6b3534387425985e60e3ca8cf5ed42ae3f7e16f9d88d5a26aba03b735c1f63fe",
+      "b": "aad759eb474943780e2ac1aa3018f230fab044d75e08669329cd71811a467105",
+      "name": "safety number 1",
+      "number": "853160583649146814666418025055759572086539409718514584323592"
+    },
+    {
+      "a": "e7f206c739c386c0af29786b0c73ed175c6db49ef83ccc1191f8e94faacd2d78",
+      "b": "ed8811fd5c2a6ebba81eaa5c8e2d2101771755e1e3f0f45cc2e5f523a0721e9b",
+      "name": "safety number 2",
+      "number": "666421862457695692914281500133881037163869566193361124897263"
+    }
+  ]
+}

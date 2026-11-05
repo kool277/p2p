@@ -12,6 +12,7 @@ zeroize = { workspace = true }
 
 [dev-dependencies]
 provider-testonly = { workspace = true }
+proptest = "1"
 
 [lints]
 workspace = true

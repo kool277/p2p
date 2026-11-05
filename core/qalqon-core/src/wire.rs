@@ -400,6 +400,6 @@ pub fn encode_extensions(mut list: Vec<(u16, Vec<u8>)>) -> Result<Vec<u8>, WireE
 }
 
 /// Finds an extension by type.
-pub fn find_extension<'a, 'b>(list: &'b [Extension<'a>], ty: u16) -> Option<&'a [u8]> {
+pub fn find_extension<'a>(list: &[Extension<'a>], ty: u16) -> Option<&'a [u8]> {
     list.iter().find(|e| e.ty == ty).map(|e| e.value)
 }

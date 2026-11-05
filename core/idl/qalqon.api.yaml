@@ -1,10 +1,11 @@
 # Qalqon public API definition, IDL v0.
 #
 # This is the single source of truth for the public API (build prompt §1.7).
-# Generators arrive in Phase 2 and will produce the UniFFI .udl, the Rust ABI
-# glue behind qalqon.h, the WIT file, the JSON-RPC schema and docs/SDK-API.md.
+# `cargo run -p idlgen` turns it into the Rust API types, the C ABI, the UniFFI .udl,
+# the WIT file, the JSON-RPC schema, the sidecar dispatch and clients, the TypeScript
+# types and docs/SDK-API.md. `idlgen --check` fails if any of them is stale.
 #
-# Status: proposal for the Phase 0 gate. See docs/adr/0002-core-and-ffi-strategy.md.
+# Status: draft. See docs/adr/0002-core-and-ffi-strategy.md.
 #
 # Conventions
 #   Names are lowerCamelCase for members and UpperCamelCase for types. Generators
@@ -89,7 +90,8 @@ enums:
     doc: "What an external transport link connects to."
     values:
       server: "The control plane connection to a host."
-      peer: "A data plane connection to another client."
+      peer: "A direct data plane connection to another client."
+      relay: "A data plane connection through the blind relay at the given address."
   Severity:
     doc: "The severity of an alarm."
     values:
@@ -108,10 +110,10 @@ enums:
     values:
       get: "Read one record by key."
       put: "Create or replace one record."
-      list: "Read a page of records, with the cursor in key."
+      list: "Read records. key narrows them: user:<id> lists one user's devices."
       append: "Append one row. AuditSink only."
       head: "Read the latest row. AuditSink only."
-      range: "Read rows in a range, with the bounds in key. AuditSink only."
+      range: "Read rows in a range, with from,to in key, both inclusive. AuditSink only."
 
 records:
   KeyStoreConfig:
@@ -129,7 +131,7 @@ records:
       relayPolicy: {type: "RelayPolicy?", doc: "Defaults to preferDirect."}
       identityChangePolicy: {type: "IdentityChangePolicy?", doc: "Defaults to block."}
       revocationGraceMs: {type: "u64?", doc: "How long past a CRL's next update new peer sessions are still allowed. Defaults to 72 hours. This is local, and server policy cannot change it."}
-      externalTransport: {type: "ExternalTransport?", doc: "Set this where the application owns the sockets, such as in a browser. Unset, the SDK uses its built-in transports."}
+      externalTransport: {type: "string?", doc: "Set this to ExternalTransport.handleId() where the application owns the sockets. Unset, the SDK uses its built-in transports."}
   Credentials:
     doc: "Login details. The secret goes only to the host, inside the Qalqon channel."
     fields:
@@ -170,7 +172,7 @@ records:
   ChannelInfo:
     doc: "The current state of a channel."
     fields:
-      channelId: {type: u16, doc: "The channel's identifier within its session."}
+      channelId: {type: u64, doc: "The channel's identifier, unique within this Session. It is not the wire's channel_id, which is per peer."}
       peer: {type: PeerIdentity, doc: "The peer on the other end."}
       path: {type: PathKind, doc: "The current path."}
       keyEpoch: {type: u16, doc: "The current send key epoch."}
@@ -194,10 +196,15 @@ records:
   ServerConfig:
     doc: "Configuration a host loads and hands to the server core. Holds references only, never key material."
     fields:
-      identityKeyRef: {type: string, doc: "A reference to the server's identity key: a file path, a PKCS#11 URI or a sealed blob. The core opens it, so the host never holds the key's bytes."}
+      identityKeyRef: {type: string, doc: "A reference to the server's identity key, such as file:/path/to/keys#server. The core opens it, so the host never holds the key's bytes."}
+      chain: {type: bytes, doc: "The server's certificate chain, whose leaf names this host."}
       caBundle: {type: bytes, doc: "The trusted root certificates."}
+      issuingKeyRef: {type: "string?", doc: "A reference to the issuing CA's key, if this server issues device certificates. Enrolment fails without it."}
+      issuingCertificate: {type: "bytes?", doc: "The issuing CA's certificate, when issuingKeyRef is set."}
+      relayKeyRef: {type: string, doc: "A reference to the key shared with the relays, such as file:/path/to/keys#relay."}
+      auditKeyRef: {type: string, doc: "A reference to the key for hashing secrets presented in failed logins."}
       relayAddresses: {type: "list<string>", doc: "The relay and TURN addresses to hand to clients."}
-      policy: {type: bytes, doc: "The initial policy document, as JSON."}
+      policy: {type: "bytes?", doc: "The initial policy document, as JSON. Unset, the default policy applies."}
   ConnectionMeta:
     doc: "What a host knows about an accepted connection."
     fields:
@@ -230,16 +237,16 @@ variants:
       channelOpened:
         doc: "A channel is ready."
         fields:
-          channelId: {type: u16, doc: "The channel."}
+          channelId: {type: u64, doc: "The channel."}
       channelClosed:
         doc: "A channel ended."
         fields:
-          channelId: {type: u16, doc: "The channel."}
+          channelId: {type: u64, doc: "The channel."}
           clean: {type: bool, doc: "False means the transport ended without an authenticated close, so data may have been cut off."}
       messageAvailable:
         doc: "A channel has a message ready for receive."
         fields:
-          channelId: {type: u16, doc: "The channel."}
+          channelId: {type: u64, doc: "The channel."}
       peerIdentityChanged:
         doc: "A peer's identity key differs from its pin, or a pinned user presented a new device."
         fields:
@@ -267,7 +274,8 @@ variants:
         fields:
           linkId: {type: u64, doc: "The identifier to use for this link."}
           kind: {type: LinkKind, doc: "What to connect to."}
-          url: {type: "string?", doc: "The address, for a server link."}
+          url: {type: "string?", doc: "The address, for a server or relay link."}
+          initiator: {type: bool, doc: "For a peer link: this side makes the connection or the WebRTC offer."}
       sendFrame:
         doc: "Send a frame on a link."
         fields:
@@ -339,6 +347,13 @@ functions:
       config: {type: ServerConfig, doc: "The host's configuration."}
     returns: ServerCore
     errors: [invalidArgument, keyStoreUnavailable, selfTestFailed, integrityCheckFailed]
+  conformanceRun:
+    async: false
+    doc: "Checks one file from tests/conformance inside this runtime. Every binding runs this before anything built on it is released. Returns a JSON report."
+    params:
+      vectors: {type: string, doc: "The vector file's contents."}
+    returns: string
+    errors: []
 
 interfaces:
   Session:
@@ -433,6 +448,12 @@ interfaces:
   ExternalTransport:
     doc: "Lets an adapter own the sockets, as browsers and mobile WebRTC require. The adapter polls for commands and reports what happens. Frames are already encrypted, so the adapter never sees keys or plaintext."
     methods:
+      handleId:
+        async: false
+        doc: "Returns the value to put in SessionConfig.externalTransport."
+        params: {}
+        returns: string
+        errors: []
       pollCommand:
         async: true
         doc: "Waits for the next command from the core."
@@ -504,9 +525,10 @@ interfaces:
         returns: null
         errors: [closed]
       pollEffect:
-        async: false
-        doc: "Returns the next thing the host must do, or nothing when there is no work."
-        params: {}
+        async: true
+        doc: "Waits for the next thing the host must do. Returns nothing if the timeout passes first. Password checks finish on worker threads, so a host keeps calling this."
+        params:
+          timeoutMs: {type: u32, doc: "How long to wait. 0 returns at once."}
         returns: "Effect?"
         errors: [closed]
       completeEffect:
@@ -519,8 +541,8 @@ interfaces:
         returns: null
         errors: [invalidArgument, closed]
       adminCall:
-        async: false
-        doc: "Runs an admin operation after the host has authenticated the caller. See docs/HOST-SPI.md."
+        async: true
+        doc: "Runs an admin operation after the host has authenticated the caller. This waits on the stores, so the host's effect loop must keep running. See docs/HOST-SPI.md."
         params:
           method: {type: string, doc: "The admin method's name."}
           paramsJson: {type: string, doc: "The parameters, as JSON."}

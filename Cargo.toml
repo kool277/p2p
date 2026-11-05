@@ -13,6 +13,11 @@ members = [
     "core/qalqon-transport-tcp",
     "core/qalqon-transport-udp",
     "core/server-core",
+    "core/qalqon-conformance",
+    "core/qalqon-api",
+    "core/qalqon-signal",
+    "tools/idlgen",
+    "tools/vectors",
     "tools/qalqon-ca",
     "tools/peer-demo",
 ]
@@ -27,6 +32,11 @@ default-members = [
     "core/qalqon-transport-tcp",
     "core/qalqon-transport-udp",
     "core/server-core",
+    "core/qalqon-conformance",
+    "core/qalqon-api",
+    "core/qalqon-signal",
+    "tools/idlgen",
+    "tools/vectors",
     "tools/qalqon-ca",
     "tools/peer-demo",
 ]
@@ -48,6 +58,9 @@ qalqon-transport-tcp = { path = "core/qalqon-transport-tcp" }
 qalqon-transport-udp = { path = "core/qalqon-transport-udp" }
 keystore-file = { path = "core/keystore-file" }
 server-core = { path = "core/server-core" }
+qalqon-conformance = { path = "core/qalqon-conformance" }
+qalqon-api = { path = "core/qalqon-api" }
+qalqon-signal = { path = "core/qalqon-signal" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 zeroize = { version = "1.9", default-features = false, features = ["alloc"] }

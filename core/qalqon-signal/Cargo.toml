@@ -1,0 +1,23 @@
+[package]
+name = "qalqon-signal"
+description = "The client side as a sans-I/O state machine: control session, login, rendezvous, path selection and peer sessions. Native SDKs and WebAssembly both drive it."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+crypto-provider = { workspace = true }
+qalqon-core = { workspace = true }
+qalqon-audit = { workspace = true }
+qalqon-api = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+provider-testonly = { workspace = true }
+server-core = { workspace = true }
+qalqon-ca = { path = "../../tools/qalqon-ca" }
+
+[lints]
+workspace = true
