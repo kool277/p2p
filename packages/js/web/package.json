@@ -1,0 +1,10 @@
+{
+  "name": "@qalqon/web",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The Qalqon SDK for browsers. The core runs as WebAssembly in a Web Worker, so keys and protocol logic stay off the main thread.",
+  "type": "module",
+  "main": "src/index.js",
+  "types": "src/index.d.ts",
+  "exports": { ".": "./src/index.js" }
+}

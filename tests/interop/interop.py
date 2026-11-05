@@ -37,7 +37,11 @@ CLIENTS = {
     "cli-rust": [bin_path("qalqon-cli-rust")],
     "cli-c": [os.path.join(ROOT, "target", "cli-c", "qalqon-cli-c")],
     "php-cli": ["php", os.path.join(ROOT, "clients", "php-cli", "qalqon.php")],
+    "web-react": ["node", os.path.join(ROOT, "tests", "interop", "web", "driver.mjs")],
 }
+
+# A browser has no direct path to a native peer yet, so it reaches one through the relay.
+RELAY_ONLY_WITH_NATIVE = {"web-react"}
 
 SERVERS = {
     "rust-axum": lambda port, db, pki, token, relay: [
@@ -255,16 +259,22 @@ def run_cell(args):
                 raise Failure(f"{client} did not enrol: exit {code}\n{open(log).read()[-2000:]}")
         print(f"  ok enrolled {args.client} and {args.peer}")
 
-        first, _ = scenario(cell, args.client, args.peer, data_a, data_b, False, "direct", env, "direct")
+        # Two browsers get a direct WebRTC path, and a browser with a native peer falls
+        # back to the relay by itself. That fallback is part of what this checks.
+        pair = {args.client, args.peer}
+        expected = "relayed" if pair & RELAY_ONLY_WITH_NATIVE and pair != RELAY_ONLY_WITH_NATIVE else "direct"
+        first, _ = scenario(cell, args.client, args.peer, data_a, data_b, False, expected, env, "prefer-direct")
         if first["peer_status"] != "pinned":
             raise Failure(f"expected a pinned peer on first contact, got {first['peer_status']}")
         scenario(cell, args.client, args.peer, data_a, data_b, True, "relayed", env, "relay-forced")
 
         deadline = time.time() + 5
-        while time.time() < deadline and (cell.metric("qalqon_data_sessions_direct_total") < 1 or cell.metric("qalqon_data_sessions_relayed_total") < 1):
+        while time.time() < deadline and cell.metric("qalqon_data_sessions_relayed_total") < 1:
             time.sleep(0.1)
-        if cell.metric("qalqon_data_sessions_direct_total") < 1 or cell.metric("qalqon_data_sessions_relayed_total") < 1:
-            raise Failure("the host's metrics do not show both a direct and a relayed session")
+        direct_seen = cell.metric("qalqon_data_sessions_direct_total")
+        relayed_seen = cell.metric("qalqon_data_sessions_relayed_total")
+        if relayed_seen < 1 or (expected == "direct" and direct_seen < 1):
+            raise Failure(f"the host's metrics show {direct_seen} direct and {relayed_seen} relayed sessions")
 
         verified = cell.admin("audit.verify")
         if verified.get("ok") is not True:

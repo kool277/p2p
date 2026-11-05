@@ -98,6 +98,7 @@ struct World {
     /// Links offered on the direct path that are listening, by their signal text.
     listening: HashMap<String, LinkRef>,
     direct_enabled: bool,
+    stranger_on_direct_port: bool,
     relay_policy: api::RelayPolicy,
     identity_policy: api::IdentityChangePolicy,
     revocation_grace_ms: u64,
@@ -141,6 +142,7 @@ impl World {
             direct_seen: Vec::new(),
             listening: HashMap::new(),
             direct_enabled: true,
+            stranger_on_direct_port: false,
             relay_policy: api::RelayPolicy::PreferDirect,
             identity_policy: api::IdentityChangePolicy::Block,
             revocation_grace_ms: 72 * 60 * 60 * 1000,
@@ -239,7 +241,18 @@ impl World {
                         if !self.direct_enabled {
                             return; // Nothing ever answers, as behind a hostile NAT.
                         }
+                        if initiator && self.stranger_on_direct_port {
+                            // The candidate never arrives, so this side times out.
+                            return;
+                        }
                         if !initiator {
+                            if self.stranger_on_direct_port {
+                                // Somebody connects first and sends junk. The real peer's
+                                // connection attempt then finds nothing.
+                                self.clients[client].link_opened(now, link_id, STREAM_CAPS);
+                                self.clients[client].frame_received(now, link_id, b"GET / HTTP/1.1\r\n\r\n");
+                                return;
+                            }
                             // The responder listens and sends its candidate through the server.
                             let candidate = format!("listen:{client}:{link_id}");
                             self.listening.insert(candidate.clone(), me);
@@ -414,7 +427,7 @@ impl World {
         let api::Event::ChannelRequested { request_id, .. } = request else { unreachable!() };
         let accept = self.clients[callee].accept_channel(self.now, &request_id);
         let at_callee = loop {
-            if self.direct_enabled || self.relay_policy == api::RelayPolicy::RelayOnly {
+            if (self.direct_enabled && !self.stranger_on_direct_port) || self.relay_policy == api::RelayPolicy::RelayOnly {
                 self.pump();
             } else {
                 self.advance(500);
@@ -576,6 +589,20 @@ fn prefer_direct_falls_back_to_the_relay_when_no_direct_path_exists() {
     world.pump();
     assert_eq!(world.clients[b].receive(at_b).unwrap(), Some(b"through the relay".to_vec()));
     assert!(world.events[a].iter().any(|e| matches!(e, api::Event::PathChanged { path: api::PathKind::Relayed, .. })));
+}
+
+#[test]
+fn a_stranger_on_the_direct_port_does_not_cost_the_call() {
+    let (mut world, alice, bob) = two_users();
+    world.stranger_on_direct_port = true;
+    let a = world.logged_in("alice", &alice);
+    let b = world.logged_in("bob", &bob);
+    let (at_a, at_b) = world.call(a, b, "bob").unwrap();
+    assert_eq!(world.clients[a].channel_info(at_a).unwrap().path, api::PathKind::Relayed);
+    let now = world.now;
+    world.clients[a].send(now, at_a, b"still works").unwrap();
+    world.pump();
+    assert_eq!(world.clients[b].receive(at_b).unwrap(), Some(b"still works".to_vec()));
 }
 
 #[test]

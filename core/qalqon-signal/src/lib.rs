@@ -39,6 +39,8 @@ const DIRECT_TIMEOUT_INITIATOR_MS: u64 = 3_000;
 const DIRECT_TIMEOUT_RESPONDER_MS: u64 = 4_000;
 const DEFAULT_CHANNEL_TIMEOUT_MS: u64 = 30_000;
 const LOGIN_TIMEOUT_MS: u64 = 30_000;
+/// Section 5.4: a `rendezvous_id` expires this long after the client receives it.
+const RENDEZVOUS_TTL_MS: u64 = 120_000;
 /// A relay sends this once both sides have joined.
 const RELAY_PAIRED: &[u8] = &[1];
 
@@ -161,6 +163,7 @@ struct Peer {
     device_id: Option<String>,
     request_id: [u8; 16],
     rendezvous_id: Option<[u8; 16]>,
+    rendezvous_expires_at: u64,
     role: Role,
     stage: PeerStage,
     grants: Vec<RelayGrant>,
@@ -506,6 +509,7 @@ impl ClientCore {
                 device_id: peer.device_id,
                 request_id,
                 rendezvous_id: None,
+                rendezvous_expires_at: u64::MAX,
                 role: Role::Initiator,
                 stage: PeerStage::Rendezvous,
                 grants: Vec::new(),
@@ -1141,7 +1145,7 @@ impl ClientCore {
         self.goal = None;
         self.goal_deadline = None;
         let outcome = if code == ErrorKind::Ok {
-            self.install_enrolled_chain(message)
+            self.install_enrolled_chain(message, now_ms)
         } else {
             Err(code)
         };
@@ -1159,14 +1163,18 @@ impl ClientCore {
         self.complete(op, outcome);
     }
 
-    fn install_enrolled_chain(&mut self, message: &ControlMessage) -> OpResult {
+    fn install_enrolled_chain(&mut self, message: &ControlMessage, now_ms: u64) -> OpResult {
         let chain = message.get(field::CHAIN).ok_or(ErrorKind::Internal)?.to_vec();
         let certs = cert::parse_many(self.provider.as_ref(), &chain).map_err(|_| ErrorKind::Internal)?;
         let leaf = certs.first().ok_or(ErrorKind::Internal)?;
-        // A server could hand back a certificate for someone else's key.
+        // A server could hand back a certificate for someone else's key, or a chain that
+        // does not lead to a trusted root. Either would only fail later and more confusingly.
         if leaf.fields.sign_public != *self.identity.public_key() {
             return Err(ErrorKind::EnrollmentRejected);
         }
+        let expectation = PeerExpectation::Peer { user_id: leaf.fields.subject_a.clone(), device_id: None };
+        cert::validate_chain(self.provider.as_ref(), &self.roots, &chain, now_ms, Plane::Data, &expectation)
+            .map_err(|_| ErrorKind::EnrollmentRejected)?;
         let result = api::EnrollmentResult {
             device_id: leaf.fields.subject_b.clone(),
             fingerprint: to_hex(&self.my_fingerprint),
@@ -1207,6 +1215,7 @@ impl ClientCore {
             device_id: Some(device.into()),
             request_id,
             rendezvous_id: Some(rendezvous_id),
+            rendezvous_expires_at: now_ms + RENDEZVOUS_TTL_MS,
             role: Role::Responder,
             stage: PeerStage::AwaitingAccept,
             grants,
@@ -1249,6 +1258,7 @@ impl ClientCore {
             .find(|p| p.stage == PeerStage::Rendezvous && p.request_id == request_id);
         let Some(peer) = found else { return };
         peer.rendezvous_id = Some(rendezvous_id);
+        peer.rendezvous_expires_at = now_ms + RENDEZVOUS_TTL_MS;
         peer.grants = message.get(field::RELAY_GRANTS).and_then(|g| parse_grants(g).ok()).unwrap_or_default();
         peer.hint_chain = message.get(field::CHAIN).unwrap_or_default().to_vec();
         peer.stage = PeerStage::Connecting;
@@ -1369,6 +1379,9 @@ impl ClientCore {
 
     fn start_peer_session(&mut self, now_ms: u64, peer_id: u64, caps: TransportCaps) {
         let Some(peer) = self.peers.get_mut(&peer_id) else { return };
+        if now_ms >= peer.rendezvous_expires_at {
+            return self.fail_peer(now_ms, peer_id, ErrorKind::Timeout);
+        }
         let cached = self.trust.lock().unwrap_or_else(|e| e.into_inner()).cached_chain(&peer.user_id, peer.device_id.as_deref());
         let config = SessionConfig {
             provider: self.provider.clone(),
@@ -1421,6 +1434,19 @@ impl ClientCore {
             Event::Established { peer: info, session_id, .. } => self.on_peer_established(now_ms, peer_id, info, session_id),
             Event::HandshakeFailed(failure) => {
                 let code = kind_of(failure.code);
+                // Anyone can connect to a listening direct port, and a stranger's bytes
+                // fail the handshake before anything is authenticated. That must not cost
+                // the call, and the relay is no less secure, because the same handshake
+                // authenticates the peer there.
+                let on_direct = self.peers.get(&peer_id).is_some_and(|p| p.path == Some(api::PathKind::Direct));
+                if on_direct && code == ErrorKind::HandshakeFailed && self.relay_policy == api::RelayPolicy::PreferDirect {
+                    if let Some(peer) = self.peers.get_mut(&peer_id) {
+                        peer.session = None;
+                        peer.stage = PeerStage::Connecting;
+                    }
+                    self.audit_event(now_ms, "direct path", "session", audit_op::SESSION_ESTABLISHED, code.name(), failure.detail);
+                    return self.direct_failed(now_ms, peer_id);
+                }
                 let (user, device) = self
                     .peers
                     .get(&peer_id)

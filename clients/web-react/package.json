@@ -1,0 +1,20 @@
+{
+  "name": "qalqon-web-react",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite"
+  },
+  "dependencies": {
+    "@qalqon/react": "file:../../packages/js/react",
+    "@qalqon/web": "file:../../packages/js/web",
+    "react": "^19",
+    "react-dom": "^19"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^5",
+    "vite": "^7"
+  }
+}
