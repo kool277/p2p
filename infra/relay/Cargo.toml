@@ -1,0 +1,17 @@
+[package]
+name = "qalqon-relay"
+description = "The blind relay. Pairs two clients that hold grants for one rendezvous, then forwards frames it cannot read."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+crypto-provider = { workspace = true }
+qalqon-core = { workspace = true }
+qalqon-sdk = { workspace = true }
+keystore-file = { workspace = true }
+tungstenite = "0.30"
+
+[lints]
+workspace = true

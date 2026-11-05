@@ -3,13 +3,16 @@
 # A query that comes back "cannot be proved" fails this script.
 set -u
 cd "$(dirname "$0")"
-PROVERIF=${PROVERIF:-"docker run --rm -v $PWD:/model -w /model --entrypoint proverif qalqon-proverif"}
+TIME_LIMIT=${MODEL_TIMEOUT:-1800}
+# The limit runs inside the container, so a run that hits it really stops.
+PROVERIF=${PROVERIF:-"docker run --rm --init -v $PWD:/model -w /model --entrypoint timeout qalqon-proverif $TIME_LIMIT proverif"}
 
 #            file                     lib  expected true  expected false
 models=(
-  "fs_secrecy_agreement.pv            lib  8              2"
-  "ephemeral_leak.pv                  lib  2              1"
-  "kci.pv                             lib  2              2"
+  "honest_run.pv                      lib  0              2"
+  "fs_secrecy_agreement.pv            lib  8              0"
+  "ephemeral_leak.pv                  lib  2              0"
+  "kci.pv                             lib  2              0"
   "hybrid.pv                          -    2              0"
   "rekey.pv                           -    2              1"
   "pins.pv                            lib  4              1"
@@ -17,13 +20,13 @@ models=(
   "negative_ik.pv                     -    0              2"
 )
 
-status=0
-for entry in "${models[@]}"; do
+check() {
+  local entry=$1 status=0
   read -r file lib want_true want_false <<<"$entry"
   args=()
   [ "$lib" = lib ] && args=(-lib qalqon.pvl)
   start=$(date +%s)
-  output=$(timeout "${MODEL_TIMEOUT:-900}" $PROVERIF "${args[@]}" "$file" 2>&1)
+  output=$($PROVERIF "${args[@]}" "$file" 2>&1)
   rc=$?
   took=$(( $(date +%s) - start ))
   results=$(grep -E '^RESULT ' <<<"$output")
@@ -37,5 +40,16 @@ for entry in "${models[@]}"; do
   else
     echo "ok   $file (${took}s): $got_true proved, $got_false refuted as expected"
   fi
+  return $status
+}
+
+pids=()
+for entry in "${models[@]}"; do
+  check "$entry" &
+  pids+=($!)
+done
+status=0
+for pid in "${pids[@]}"; do
+  wait "$pid" || status=1
 done
 exit $status

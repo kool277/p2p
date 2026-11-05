@@ -1,0 +1,15 @@
+[package]
+name = "qalqon-cli-rust"
+description = "A command-line client over the native SDK. It is the peer in every interop test."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+qalqon-sdk = { workspace = true }
+serde_json = { workspace = true }
+hex = "0.4"
+
+[lints]
+workspace = true

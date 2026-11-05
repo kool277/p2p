@@ -2,10 +2,12 @@
 //! `idlgen --check` fails if any file on disk differs from what it would write.
 //! Run it from the repository root, or let `cargo run -p idlgen` find the root.
 
+mod c_abi;
 mod docs;
 mod idl;
 mod rust_api;
 mod schema;
+mod sidecar;
 
 use std::path::{Path, PathBuf};
 
@@ -33,7 +35,23 @@ fn main() {
         ("core/idl/generated/qalqon.jsonrpc.json", schema::jsonrpc(&idl)),
         ("core/idl/generated/qalqon.d.ts", schema::typescript(&idl)),
     ];
+    outputs.push(("core/ffi/src/generated.rs", c_abi::generate(&idl)));
+    outputs.push(("core/sidecar/src/generated.rs", sidecar::dispatch(&idl)));
+    outputs.push(("bindings/sidecar-clients/php/QalqonClient.php", sidecar::php(&idl)));
+    outputs.push(("bindings/sidecar-clients/ruby/qalqon_client.rb", sidecar::ruby(&idl)));
+    outputs.push(("bindings/sidecar-clients/elixir/qalqon_client.ex", sidecar::elixir(&idl)));
+    outputs.push(("bindings/sidecar-clients/shell/qalqon.sh", sidecar::shell(&idl)));
     outputs.sort_by_key(|(path, _)| *path);
+
+    // cbindgen reads the ABI source, so in --check mode it reads what would be written.
+    let abi_dir = std::env::temp_dir().join(format!("qalqon-idlgen-{}", std::process::id()));
+    std::fs::create_dir_all(&abi_dir).expect("create a temporary directory");
+    std::fs::copy(root.join("core/ffi/src/lib.rs"), abi_dir.join("lib.rs")).expect("read the ABI source");
+    let generated = outputs.iter().find(|(p, _)| *p == "core/ffi/src/generated.rs").expect("generated above");
+    std::fs::write(abi_dir.join("generated.rs"), &generated.1).expect("write a temporary file");
+    let header = c_abi::header(&abi_dir);
+    let _ = std::fs::remove_dir_all(&abi_dir);
+    outputs.push(("bindings/c/include/qalqon.h", header));
 
     let mut stale = false;
     for (path, content) in &outputs {

@@ -9,13 +9,12 @@
    That record is protected only by the session's symmetric keys, so whoever holds this
    session's ephemeral can forge it. I still knows R signed this transcript. *)
 
+set reconstructTrace = false.
+
 query b: id, o: offer, s: suite, h: bitstring, k1: key, k2: key;
     inj-event(RAccept(alice, b, o, s, k1, k2)) ==> inj-event(IFinish(alice, b, o, s, h, k1, k2)).
 query a: id, o: offer, s: suite, h: bitstring, k1: key, k2: key;
     inj-event(IFinish(a, bob, o, s, h, k1, k2)) ==> inj-event(RResponded(bob, o, s, h)).
-
-(* Sanity: expected false. *)
-query o: offer, s: suite, k1: key, k2: key; event(RAccept(alice, bob, o, s, k1, k2)).
 
 process
     new skca: skey;

@@ -1,0 +1,21 @@
+(* Sanity for fs_secrecy_agreement.pv and kci.pv: the same processes, with no attacker
+   help, really complete. Both queries are expected to come back false, which means the
+   event is reachable. Without this, a typo that blocked the protocol would make every
+   other query trivially true, which is exactly what happened in this model's first
+   version. *)
+
+query o: offer, s: suite, k1: key, k2: key; event(IConfirmed(alice, bob, o, s, k1, k2)).
+query o: offer, s: suite, k1: key, k2: key; event(RAccept(alice, bob, o, s, k1, k2)).
+
+process
+    new skca: skey;
+    new ska: skey;
+    new skb: skey;
+    let capk = pk(skca) in
+    let chain_a = cert(alice, pk(ska), skca) in
+    let chain_b = cert(bob, pk(skb), skca) in
+    out(c, (capk, pk(ska), pk(skb), chain_a, chain_b));
+    (
+        Initiator(alice, ska, chain_a, capk, false)
+      | Responder(bob, skb, chain_b, capk, false)
+    )

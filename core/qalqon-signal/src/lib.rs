@@ -331,6 +331,11 @@ impl ClientCore {
         self.commands.pop_front()
     }
 
+    /// True if a command is waiting.
+    pub fn has_pending_commands(&self) -> bool {
+        !self.commands.is_empty()
+    }
+
     /// The next event for the application.
     pub fn poll_event(&mut self) -> Option<api::Event> {
         self.events.pop_front()

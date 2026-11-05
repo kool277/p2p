@@ -1,5 +1,9 @@
 (* Properties 1, 2, 4, 6 and 7 (misbinding) in docs/PROTOCOL.md, section 15. Identity
-   keys and the CA key are published after the sessions end, in phase 1. *)
+   keys and the CA key are published after the sessions end, in phase 1.
+
+   honest_run.pv shows that the honest run completes, so these are not vacuous. *)
+
+set reconstructTrace = false.
 
 query attacker(secret_from_i).
 query attacker(secret_from_r).
@@ -22,11 +26,6 @@ query a: id, o: offer, s: suite, h: bitstring, k1: key, k2: key;
 (* Downgrade: I offered both suites, and yet an honest peer's weak suite was accepted. *)
 query a: id, h: bitstring, k1: key, k2: key;
     event(IFinish(a, bob, offer_both, suite_weak, h, k1, k2)).
-
-(* Sanity: an honest run really completes, so the results above are not vacuous.
-   These two are expected to come back false. *)
-query o: offer, s: suite, k1: key, k2: key; event(IConfirmed(alice, bob, o, s, k1, k2)).
-query o: offer, s: suite, k1: key, k2: key; event(RAccept(alice, bob, o, s, k1, k2)).
 
 process
     new skca: skey;

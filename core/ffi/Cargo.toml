@@ -1,0 +1,21 @@
+[package]
+name = "qalqon-ffi"
+description = "The C ABI that every native binding is built on (ADR-0002, part 4)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lib]
+name = "qalqon"
+crate-type = ["rlib", "staticlib", "cdylib"]
+
+[dependencies]
+qalqon-sdk = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[lints.rust]
+# The ABI cannot avoid unsafe. Build prompt §8 allows it here, with each block justified.
+unsafe_code = "allow"
+non_camel_case_types = "allow"

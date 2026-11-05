@@ -10,6 +10,7 @@ publish.workspace = true
 crypto-provider = { workspace = true }
 qalqon-core = { workspace = true }
 provider-testonly = { workspace = true }
+keystore-file = { workspace = true }
 
 
 [lints]
