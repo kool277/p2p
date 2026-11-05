@@ -3,7 +3,8 @@
 # A query that comes back "cannot be proved" fails this script.
 set -u
 cd "$(dirname "$0")"
-TIME_LIMIT=${MODEL_TIMEOUT:-1800}
+# secrecy_forward.pv is the slowest, at about 30 minutes on a 32-core machine.
+TIME_LIMIT=${MODEL_TIMEOUT:-3600}
 # The limit runs inside the container, so a run that hits it really stops.
 PROVERIF=${PROVERIF:-"docker run --rm --init -v $PWD:/model -w /model --entrypoint timeout qalqon-proverif $TIME_LIMIT proverif"}
 

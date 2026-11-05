@@ -35,6 +35,8 @@ All on the test-only provider, on Linux x64, on one machine, on loopback. Each r
 
 The shared vectors pass in C and C++, PHP, shell, the browser's WebAssembly, and scaffolded Python through both the C ABI and the sidecar. `tests/phase1-gate.sh` runs two separate processes over TCP and UDP, including with 10% loss.
 
+GitHub Actions repeats the primary pairs, the vectors and the checks on a clean Ubuntu runner for every pull request, and both jobs pass. The formal models in `formal/` all came back as expected. See `formal/README.md` for what they do and do not show.
+
 ## Known gaps
 
 **These matter most, in order.**

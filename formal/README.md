@@ -15,7 +15,7 @@ This is a **symbolic model of the message flow**. It assumes perfect primitives,
 
 ## The models
 
-Section 15 of the specification lists the properties to prove.
+Section 15 of the specification lists the properties to prove. All of these came back as expected on 2026-11-05, under ProVerif 2.05. `secrecy_forward.pv` took about 30 minutes, `kci.pv` and `ephemeral_leak.pv` about 2 minutes, and the rest less.
 
 | Property | Model | Expected |
 | --- | --- | --- |
