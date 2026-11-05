@@ -2,7 +2,7 @@
 
 `PROTOCOL_VERSION` 0.1, draft v0.
 
-**Status: proposal for the Phase 0 gate.** Nothing here is implemented. An AI-assisted review of an earlier version found defects, which are fixed here, but the fixes have not been re-reviewed. There is no formal model or review by a human cryptographer yet. The wire format freezes at Phase 2, and major version 0 makes no compatibility promise.
+**Status: draft, implemented in `core/qalqon-core` against the test-only provider.** Nothing here has run with the certified library. An AI-assisted review of an earlier version found defects, which are fixed here, but no human cryptographer has reviewed it. The wire format freezes at Phase 2, and major version 0 makes no compatibility promise.
 
 ## 1. Scope
 
@@ -87,6 +87,8 @@ A `suite_id` names one complete combination. There is no separate negotiation of
 | `0x0000` | Reserved: "not selected yet". Valid only in `XX_INIT`, in its fragments and in `HS_REJECT` | | | |
 | `0x0101` | `nat` + X25519 | R | 1106 | 1092 |
 | `0x0102` | `nat` + X25519 + ML-KEM-768 | R | 1106 | 1092 |
+
+`suite_id` values from `0xFF00` to `0xFFFF` are for tests and are never offered by a release build, so a test build can never negotiate with a real one. `0xFF01` is X25519, and `0xFF02` is X25519 + ML-KEM-768. Both use AES-256-CTR with HMAC-SHA-256 (section 9.2), SHA-256 and Ed25519, and are provided by `core/provider-testonly`.
 
 `R` is the one record protection method chosen from the inventory: the library's AEAD mode if it has one, otherwise CTR or gamma with HMAC-1106 (section 9.2). A build MUST NOT offer two record protection methods. Final suite values are assigned when ADR-0001 and the inventory are complete.
 
@@ -333,8 +335,10 @@ If the library has an AEAD mode, it is used directly, and `TagLen` is its tag le
 
 ```
 ciphertext = CTR-or-gamma(key, nonce, plaintext)
-tag = HMAC(mac, u64(len(aad)) || aad || ciphertext)
+tag = HMAC(mac, u64(len(nonce)) || nonce || u64(len(aad)) || aad || ciphertext)
 ```
+
+The nonce is authenticated because a true AEAD binds its nonce, and a composition that replaces one has to behave the same way.
 
 For CTR, `IvLen = BlockLen - 4`, and each counter block is `nonce || u32(block_index)` with `block_index` starting at 0. A record is at most 65,535 bytes, so `block_index` cannot wrap. Gamma mode's IV format comes from the inventory. Tags are not truncated. A receiver MUST verify the tag in constant time before decrypting.
 
@@ -420,7 +424,7 @@ A lost `KEY_UPDATE` with `update_requested = 0` needs no repeat, because the fir
 
 Channel 0 is the session's control channel and always exists. Application channels use IDs from 1 to 65,535: I allocates odd IDs and R allocates even ones, so the two sides never collide. `channel_id` is in the clear but authenticated.
 
-A channel is opened with `CHANNEL_OPEN` and answered with `CHANNEL_ACCEPT` or `CHANNEL_REJECT`. The core does not retransmit application data, so a channel that requires `reliable` on a lossy transport is rejected with `transportUnsupported`.
+A channel is opened with `CHANNEL_OPEN` and answered with `CHANNEL_ACCEPT` or `CHANNEL_REJECT`. The core does not retransmit application data, so a channel that requires `reliable` on a lossy transport is rejected with `transportUnsupported`. On a lossy transport, `ordered` is provided by `message_id`: a message older than the last one delivered is discarded, so order is kept and some messages can be lost.
 
 ## 11. Certificates and trust
 
@@ -451,6 +455,8 @@ tbs extensions, in ascending type order:
     0x8007 sign_public      u16 algorithm, vec16 key
     0x8008 issuer_key_id    16 bytes: first 16 bytes of H(issuer's sign_public key)
 ```
+
+An encoded chain is its certificates concatenated, leaf first. `sign_public` hashes in fingerprints and key IDs cover the whole encoded value, `u16 algorithm, vec16 key`. Signature algorithm `0xFF01` is Ed25519 in the test-only range, and a build accepts only its own provider's algorithm.
 
 ### 11.3 Validating a peer's chain
 
@@ -496,7 +502,7 @@ Each 5 bytes of `okm`, read as an integer modulo 100,000, gives one 5-digit grou
 
 ### 11.5 Revocation
 
-The issuing CA signs a CRL containing `issuer_key_id`, `this_update`, `next_update` (at most 24 hours later) and the revoked serials: `Sign(issuing CA, ctx("crl") || H(crl body))`. Clients fetch it over the control plane when connecting and before `next_update`, and cache it.
+The issuing CA signs a CRL containing `issuer_key_id`, `this_update`, `next_update` (at most 24 hours later) and the revoked serials: `Sign(issuing CA, ctx("crl") || H(crl body))`. On the wire it is `vec16 body; vec16 signature`, and the body is `opaque issuer_key_id[16]; u64 this_update; u64 next_update; vec16 serials`, where `serials` is 16-byte values with no separators. Clients fetch it over the control plane when connecting and before `next_update`, and cache it.
 
 - **No rollback.** A client MUST reject a CRL older than its cached one, by `this_update`.
 - **Fail closed.** A server can withhold a CRL but cannot forge one, so a missing CRL counts as stale. New data-plane sessions fail with `revocationDataStale` once `next_update` is further in the past than `revocationGraceMs` allows (default 72 hours). That setting is local to the client, and server policy cannot change it.
@@ -560,6 +566,14 @@ Both sides of a rendezvous receive `relay_grants`, because either may need the r
 A `chain` in a rendezvous message is only a hint for showing who is calling. It is never trusted: the handshake authenticates the peer's own chain, and section 8 refuses to use it.
 
 `SESSION_REPORT` is self-reported, so it feeds metrics and never feeds security decisions.
+
+### 12.1 Relay grants
+
+A relay checks a grant with a key it shares with the server, and it holds no session keys. A client's first message to a relay is `opaque rendezvous_id[16]; vec8 token`, and the relay pairs the two clients that present a valid token for the same ID, then forwards frames unchanged.
+
+```
+token = u64(expires_at) || HMAC(relay_key, "qalqon0 relay grant" || 0x00 || rendezvous_id || u64(expires_at))
+```
 
 ## 13. Handshake rejection
 

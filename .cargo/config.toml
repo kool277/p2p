@@ -1,0 +1,2 @@
+[alias]
+qalqon = "run -q -p qalqon-cli --"

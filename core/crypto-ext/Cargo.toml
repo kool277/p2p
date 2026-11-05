@@ -1,0 +1,23 @@
+[package]
+name = "crypto-ext"
+description = "Feature-gated primitives outside the certified boundary (ADR-0001). Never payload cryptography."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[features]
+default = ["x25519", "ml-kem", "argon2id"]
+x25519 = ["dep:x25519-dalek"]
+ml-kem = ["dep:ml-kem"]
+argon2id = ["dep:argon2"]
+
+[dependencies]
+crypto-provider = { workspace = true }
+zeroize = { workspace = true }
+x25519-dalek = { version = "3", default-features = false, features = ["static_secrets", "zeroize"], optional = true }
+ml-kem = { version = "0.3", optional = true }
+argon2 = { version = "0.6", optional = true }
+
+[lints]
+workspace = true

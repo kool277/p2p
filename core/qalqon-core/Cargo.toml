@@ -1,0 +1,17 @@
+[package]
+name = "qalqon-core"
+description = "The sans-I/O Qalqon engine: handshake, record layer, key schedule, channels. Builds without an OS when given an allocator."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+crypto-provider = { workspace = true }
+zeroize = { workspace = true }
+
+[dev-dependencies]
+provider-testonly = { workspace = true }
+
+[lints]
+workspace = true

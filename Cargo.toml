@@ -1,0 +1,43 @@
+# The root virtual workspace (ADR-0003, part 2). One Cargo.lock guarantees that
+# every Rust folder compiles identical core sources.
+[workspace]
+resolver = "3"
+members = [
+    "core/crypto-provider",
+    "core/crypto-ext",
+    "core/provider-testonly",
+    "core/qalqon-core",
+]
+default-members = [
+    "core/crypto-provider",
+    "core/crypto-ext",
+    "core/provider-testonly",
+    "core/qalqon-core",
+]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.85"
+publish = false
+
+[workspace.dependencies]
+crypto-provider = { path = "core/crypto-provider" }
+crypto-ext = { path = "core/crypto-ext" }
+provider-testonly = { path = "core/provider-testonly" }
+qalqon-core = { path = "core/qalqon-core" }
+zeroize = { version = "1.9", default-features = false, features = ["alloc"] }
+subtle = { version = "2.6", default-features = false }
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+missing_debug_implementations = "warn"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+# Debug assertions stay on in the dev profile, which is what lets
+# provider-testonly compile. Dependencies are optimised so Argon2id and the
+# primitives run at a usable speed in tests.
+[profile.dev.package."*"]
+opt-level = 3

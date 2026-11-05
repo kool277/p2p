@@ -4,12 +4,12 @@ The working plan for the build described in `CLAUDE.md`. It is updated in every 
 
 ## Where things stand
 
-**Phase 0 is at its gate.** The documents are drafted, no code exists, and no client and server combination builds. Phase 1 cannot start until the decisions below are made.
+**Phase 1 is in progress on the test-only provider.** The owner asked to proceed without answering the decisions below, so this work follows the recommendations in this file, and each of them can still be changed. Nothing here uses the certified library, so nothing here meets O'z DSt requirements yet. No client and server combination builds yet.
 
 | Phase | Scope | Gate | State |
 | --- | --- | --- | --- |
-| 0 | Inventory, ADRs, protocol and API drafts | Owner approval | **Waiting for approval and the library** |
-| 1 | `core/`: crypto provider, protocol engine, vectors, formal model, server core | Two Rust peers interoperate over TCP and UDP, and the lemmas are proven | Not started |
+| 0 | Inventory, ADRs, protocol and API drafts | Owner approval | Drafts done. The inventory is still blocked on the library |
+| 1 | `core/`: crypto provider, protocol engine, vectors, formal model, server core | Two Rust peers interoperate over TCP and UDP, and the lemmas are proven | **In progress** |
 | 2 | IDL generators, C ABI, C and WASM bindings, sidecar, `rust-axum`, relay, coturn, `qalqon` CLI, templates | `cli-c`, `web-react` and a sidecar PHP CLI each talk to `rust-axum`, and `qalqon new` scaffolds a passing binding | Not started |
 | 3 | Primary pairs | Every primary pair is green on every PR, and the mixed-client triple is green | Not started |
 | 4 | Mobile, the full target matrix, per-OS packaging | Android and iOS work against two hosts, and every target produces its artifact | Not started |
@@ -18,7 +18,9 @@ The working plan for the build described in `CLAUDE.md`. It is updated in every 
 
 Phases follow §7 of the build prompt, which is fuller than the Roadmap section of `CLAUDE.md`.
 
-## Decisions needed at this gate
+## Decisions still open
+
+Work is proceeding on the recommendations below until you say otherwise, except decisions 1, 2 and 6, which only you can make.
 
 | # | Decision | What it blocks | Recommendation |
 | --- | --- | --- | --- |
