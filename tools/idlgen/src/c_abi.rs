@@ -17,7 +17,9 @@ fn abi_params(p: &Field) -> Vec<String> {
         Ty::U32 => vec![format!("{name}: u32")],
         Ty::U64 => vec![format!("{name}: u64")],
         Ty::Bytes => vec![format!("{name}: *const u8"), format!("{name}_len: usize")],
-        t if is_optional_bytes(t) => vec![format!("{name}: *const u8"), format!("{name}_len: usize")],
+        t if is_optional_bytes(t) => {
+            vec![format!("{name}: *const u8"), format!("{name}_len: usize")]
+        }
         _ => vec![format!("{name}: *const c_char")],
     }
 }
@@ -43,8 +45,13 @@ fn decode_param(p: &Field) -> String {
         Ty::Bool | Ty::U16 | Ty::U32 | Ty::U64 => String::new(),
         Ty::Str => format!("        let {name} = unsafe {{ str_arg({name}) }}?;\n"),
         Ty::Bytes => format!("        let {name} = unsafe {{ bytes_arg({name}, {name}_len) }}?;\n"),
-        t if is_optional_bytes(t) => format!("        let {name} = unsafe {{ optional_bytes_arg({name}, {name}_len) }}?;\n"),
-        t => format!("        let {name}: {} = unsafe {{ json_arg({name}) }}?;\n", api_ty(t)),
+        t if is_optional_bytes(t) => {
+            format!("        let {name} = unsafe {{ optional_bytes_arg({name}, {name}_len) }}?;\n")
+        }
+        t => format!(
+            "        let {name}: {} = unsafe {{ json_arg({name}) }}?;\n",
+            api_ty(t)
+        ),
     }
 }
 
@@ -55,18 +62,28 @@ fn out_params(returns: &Option<Ty>, idl: &Idl) -> Vec<String> {
         Some(Ty::U16) => vec!["out: *mut u16".into()],
         Some(Ty::U32) => vec!["out: *mut u32".into()],
         Some(Ty::U64) => vec!["out: *mut u64".into()],
-        Some(Ty::Named(n)) if idl.is_interface(n) => vec![format!("out: *mut *mut qalqon_{}_t", snake(n))],
-        Some(Ty::Optional(_)) => vec!["out: *mut qalqon_buffer_t".into(), "out_present: *mut bool".into()],
+        Some(Ty::Named(n)) if idl.is_interface(n) => {
+            vec![format!("out: *mut *mut qalqon_{}_t", snake(n))]
+        }
+        Some(Ty::Optional(_)) => vec![
+            "out: *mut qalqon_buffer_t".into(),
+            "out_present: *mut bool".into(),
+        ],
         Some(_) => vec!["out: *mut qalqon_buffer_t".into()],
     }
 }
 
 fn write_result(returns: &Option<Ty>, idl: &Idl) -> String {
     match returns {
-        None => "        let _ = result;\n        Ok(())\n".into(),
-        Some(Ty::Bool | Ty::U16 | Ty::U32 | Ty::U64) => "        unsafe { write_out(out, result) }\n".into(),
+        None => "        Ok(())\n".into(),
+        Some(Ty::Bool | Ty::U16 | Ty::U32 | Ty::U64) => {
+            "        unsafe { write_out(out, result) }\n".into()
+        }
         Some(Ty::Named(n)) if idl.is_interface(n) => {
-            format!("        unsafe {{ write_out(out, Box::into_raw(Box::new(qalqon_{}_t {{ inner: result }}))) }}\n", snake(n))
+            format!(
+                "        unsafe {{ write_out(out, Box::into_raw(Box::new(qalqon_{}_t {{ inner: result }}))) }}\n",
+                snake(n)
+            )
         }
         Some(Ty::Str) => "        unsafe { write_buffer(out, result.into_bytes()) }\n".into(),
         Some(Ty::Bytes) => "        unsafe { write_buffer(out, result) }\n".into(),
@@ -97,7 +114,11 @@ fn write_function(out: &mut String, c: &Callable, interface: Option<&InterfaceDe
     let _ = writeln!(out, "/// {}", c.doc);
     out.push_str("///\n/// # Safety\n/// Pointers must be valid for the call, as `bindings/c/README.md` describes.\n");
     out.push_str("#[unsafe(no_mangle)]\n");
-    let _ = writeln!(out, "pub unsafe extern \"C\" fn {name}({}) -> qalqon_status_t {{", params.join(", "));
+    let _ = writeln!(
+        out,
+        "pub unsafe extern \"C\" fn {name}({}) -> qalqon_status_t {{",
+        params.join(", ")
+    );
     out.push_str("    guard(|| {\n");
     if interface.is_some() {
         out.push_str("        let object = unsafe { handle_ref(handle) }?;\n");
@@ -106,12 +127,27 @@ fn write_function(out: &mut String, c: &Callable, interface: Option<&InterfaceDe
         out.push_str(&decode_param(p));
     }
     let args: Vec<String> = c.params.iter().map(|p| snake(&p.name)).collect();
+    let binding = if c.returns.is_some() {
+        "let result = "
+    } else {
+        ""
+    };
     match interface {
         Some(_) => {
-            let _ = writeln!(out, "        let result = object.inner.{}({})?;", snake(&c.name), args.join(", "));
+            let _ = writeln!(
+                out,
+                "        {binding}object.inner.{}({})?;",
+                snake(&c.name),
+                args.join(", ")
+            );
         }
         None => {
-            let _ = writeln!(out, "        let result = qalqon_sdk::{}({})?;", snake(&c.name), args.join(", "));
+            let _ = writeln!(
+                out,
+                "        {binding}qalqon_sdk::{}({})?;",
+                snake(&c.name),
+                args.join(", ")
+            );
         }
     }
     out.push_str(&write_result(&c.returns, idl));
@@ -123,14 +159,31 @@ pub fn generate(idl: &Idl) -> String {
         "// @generated by tools/idlgen from core/idl/qalqon.api.yaml. Do not edit.\n\nuse super::*;\n\n",
     );
     for e in &idl.errors {
-        let _ = writeln!(out, "/// {}\npub const QALQON_{}: qalqon_status_t = {};", e.doc, snake(&e.name).to_uppercase(), e.code);
+        let _ = writeln!(
+            out,
+            "/// {}\npub const QALQON_{}: qalqon_status_t = {};",
+            e.doc,
+            snake(&e.name).to_uppercase(),
+            e.code
+        );
     }
     out.push('\n');
     for i in &idl.interfaces {
-        let sdk = if i.name == "ServerCore" { "qalqon_sdk::ServerCore".to_string() } else { format!("qalqon_sdk::{}", i.name) };
+        let sdk = if i.name == "ServerCore" {
+            "qalqon_sdk::ServerCore".to_string()
+        } else {
+            format!("qalqon_sdk::{}", i.name)
+        };
         let c = snake(&i.name);
-        let _ = writeln!(out, "/// {}\npub struct qalqon_{c}_t {{\n    pub(crate) inner: {sdk},\n}}\n", i.doc);
-        let _ = writeln!(out, "/// Releases a handle. Passing null does nothing.\n///\n/// # Safety\n/// `handle` must have come from this library and must not be used afterwards.\n#[unsafe(no_mangle)]\npub unsafe extern \"C\" fn qalqon_{c}_free(handle: *mut qalqon_{c}_t) {{\n    if !handle.is_null() {{\n        drop(unsafe {{ Box::from_raw(handle) }});\n    }}\n}}\n");
+        let _ = writeln!(
+            out,
+            "/// {}\npub struct qalqon_{c}_t {{\n    pub(crate) inner: {sdk},\n}}\n",
+            i.doc
+        );
+        let _ = writeln!(
+            out,
+            "/// Releases a handle. Passing null does nothing.\n///\n/// # Safety\n/// `handle` must have come from this library and must not be used afterwards.\n#[unsafe(no_mangle)]\npub unsafe extern \"C\" fn qalqon_{c}_free(handle: *mut qalqon_{c}_t) {{\n    if !handle.is_null() {{\n        drop(unsafe {{ Box::from_raw(handle) }});\n    }}\n}}\n"
+        );
     }
     for f in &idl.functions {
         write_function(&mut out, f, None, idl);
@@ -146,17 +199,19 @@ pub fn generate(idl: &Idl) -> String {
 }
 
 pub fn header(source_dir: &std::path::Path) -> String {
-    let mut config = cbindgen::Config::default();
-    config.language = cbindgen::Language::C;
-    config.include_guard = Some("QALQON_H".into());
-    config.header = Some(
-        "/* @generated by tools/idlgen from core/idl/qalqon.api.yaml through cbindgen. Do not edit.\n *\n * Every fallible call returns a qalqon_status_t, whose values are the IDL's error codes.\n * Structured values cross as JSON text, in the encoding docs/SDK-API.md describes.\n * Keys never cross this boundary as bytes. */".into(),
-    );
-    config.documentation = true;
-    config.cpp_compat = true;
-    config.usize_is_size_t = true;
-    config.no_includes = false;
-    config.sys_includes = vec!["stdint.h".into(), "stddef.h".into(), "stdbool.h".into()];
+    let config = cbindgen::Config {
+        language: cbindgen::Language::C,
+        include_guard: Some("QALQON_H".into()),
+        header: Some(
+            "/* @generated by tools/idlgen from core/idl/qalqon.api.yaml through cbindgen. Do not edit.\n *\n * Every fallible call returns a qalqon_status_t, whose values are the IDL's error codes.\n * Structured values cross as JSON text, in the encoding docs/SDK-API.md describes.\n * Keys never cross this boundary as bytes. */".into(),
+        ),
+        documentation: true,
+        cpp_compat: true,
+        usize_is_size_t: true,
+        no_includes: true,
+        sys_includes: vec!["stdint.h".into(), "stddef.h".into(), "stdbool.h".into()],
+        ..cbindgen::Config::default()
+    };
     let mut out = Vec::new();
     cbindgen::Builder::new()
         .with_config(config)

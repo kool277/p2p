@@ -10,7 +10,10 @@ PROVERIF=${PROVERIF:-"docker run --rm --init -v $PWD:/model -w /model --entrypoi
 #            file                     lib  expected true  expected false
 models=(
   "honest_run.pv                      lib  0              2"
-  "fs_secrecy_agreement.pv            lib  8              0"
+  "secrecy_forward.pv                 lib  2              0"
+  "agreement_r.pv                     lib  1              0"
+  "agreement_i.pv                     lib  2              0"
+  "downgrade.pv                       lib  1              0"
   "ephemeral_leak.pv                  lib  2              0"
   "kci.pv                             lib  2              0"
   "hybrid.pv                          -    2              0"

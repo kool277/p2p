@@ -24,6 +24,7 @@ members = [
     "servers/rust-axum",
     "infra/relay",
     "clients/cli-rust",
+    "tools/qalqon-cli",
     "tools/idlgen",
     "tools/vectors",
     "tools/qalqon-ca",
@@ -51,10 +52,12 @@ default-members = [
     "servers/rust-axum",
     "infra/relay",
     "clients/cli-rust",
+    "tools/qalqon-cli",
     "tools/idlgen",
     "tools/vectors",
     "tools/qalqon-ca",
     "tools/peer-demo",
+    "tools/qalqon-cli",
 ]
 
 [workspace.package]

@@ -109,6 +109,8 @@ export function App() {
   const [info, setInfo] = useState(null);
   const [interop, setInterop] = useState("");
   const [records, setRecords] = useState("1000");
+  const [vectors, setVectors] = useState("");
+  const [conformance, setConformance] = useState("");
   const answering = useRef(false);
   const chat = useChannel(interop || answering.current ? null : channel);
 
@@ -346,6 +348,23 @@ export function App() {
           </section>
         </>
       )}
+
+      <section>
+        <h2>Conformance</h2>
+        <textarea {...id("conformance", "input")} value={vectors} onChange={(e) => setVectors(e.target.value)} />
+        <button
+          {...id("conformance", "run")}
+          onClick={() =>
+            attempt(async () => {
+              setConformance(JSON.stringify(await qalqon.client.conformanceRun(vectors)));
+              return "conformance finished";
+            })
+          }
+        >
+          Run vectors
+        </button>
+        <pre {...id("conformance", "result")}>{conformance}</pre>
+      </section>
     </main>
   );
 }

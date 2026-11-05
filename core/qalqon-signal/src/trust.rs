@@ -58,7 +58,11 @@ pub struct Trust {
 
 impl Trust {
     /// Restores saved state.
-    pub fn from_saved(saved: &SavedState, policy: api::IdentityChangePolicy, grace_ms: u64) -> Self {
+    pub fn from_saved(
+        saved: &SavedState,
+        policy: api::IdentityChangePolicy,
+        grace_ms: u64,
+    ) -> Self {
         let mut pins = PinTable::new();
         for pin in &saved.pins {
             if let Some(fingerprint) = from_hex(&pin.fingerprint) {
@@ -74,7 +78,15 @@ impl Trust {
             .iter()
             .filter_map(|(u, d, c)| Some(((u.clone(), d.clone()), from_hex(c)?)))
             .collect();
-        Trust { pins, crl: CrlCache::new(), chains, seen: BTreeMap::new(), last_presented: BTreeMap::new(), policy, grace_ms }
+        Trust {
+            pins,
+            crl: CrlCache::new(),
+            chains,
+            seen: BTreeMap::new(),
+            last_presented: BTreeMap::new(),
+            policy,
+            grace_ms,
+        }
     }
 
     /// What should be saved.
@@ -90,7 +102,11 @@ impl Trust {
                     verified: p.verified,
                 })
                 .collect(),
-            chains: self.chains.iter().map(|((u, d), c)| (u.clone(), d.clone(), to_hex(c))).collect(),
+            chains: self
+                .chains
+                .iter()
+                .map(|((u, d), c)| (u.clone(), d.clone(), to_hex(c)))
+                .collect(),
             audit_entries,
         }
     }
@@ -98,18 +114,26 @@ impl Trust {
     /// Keeps a chain from a completed handshake. Section 8 forbids using one that came
     /// from a server during rendezvous, so this is only called after `Established`.
     pub fn remember_chain(&mut self, user: &str, device: &str, chain: &[u8]) {
-        self.chains.insert((user.into(), device.into()), chain.to_vec());
+        self.chains
+            .insert((user.into(), device.into()), chain.to_vec());
     }
 
     /// A chain to offer with `known_responder`. With no device named, only a user with
     /// exactly one known device has an unambiguous chain.
     pub fn cached_chain(&self, user: &str, device: Option<&str>) -> Option<Vec<u8>> {
         match device {
-            Some(device) => self.chains.get(&(user.to_string(), device.to_string())).cloned(),
+            Some(device) => self
+                .chains
+                .get(&(user.to_string(), device.to_string()))
+                .cloned(),
             None => {
                 let mut matching = self.chains.iter().filter(|((u, _), _)| u == user);
                 let first = matching.next()?;
-                if matching.next().is_some() { None } else { Some(first.1.clone()) }
+                if matching.next().is_some() {
+                    None
+                } else {
+                    Some(first.1.clone())
+                }
             }
         }
     }
@@ -117,7 +141,9 @@ impl Trust {
     /// A device of this user that an authenticated handshake has shown, or a pinned one.
     /// With no device named, the most recent one wins.
     pub fn known_device(&self, user: &str, device: Option<&str>) -> Option<(String, Vec<u8>)> {
-        let device = device.map(str::to_string).or_else(|| self.last_presented.get(user).cloned());
+        let device = device
+            .map(str::to_string)
+            .or_else(|| self.last_presented.get(user).cloned());
         if let Some(device) = &device
             && let Some(fingerprint) = self.seen.get(&(user.to_string(), device.clone()))
         {
@@ -130,7 +156,12 @@ impl Trust {
     }
 
     /// The public status of an identity.
-    pub fn status_of(&self, user: &str, device: &str, fingerprint: &[u8]) -> api::VerificationStatus {
+    pub fn status_of(
+        &self,
+        user: &str,
+        device: &str,
+        fingerprint: &[u8],
+    ) -> api::VerificationStatus {
         match self.pins.decide(user, device, fingerprint) {
             PinDecision::FirstContact => api::VerificationStatus::Unverified,
             PinDecision::Match { verified: true } => api::VerificationStatus::Verified,
@@ -152,23 +183,41 @@ impl DataPlaneVerifier {
 }
 
 impl PeerVerifier for DataPlaneVerifier {
-    fn check_revocation(&mut self, chain: &ValidatedChain, now_ms: u64) -> Result<(), PeerRejection> {
+    fn check_revocation(
+        &mut self,
+        chain: &ValidatedChain,
+        now_ms: u64,
+    ) -> Result<(), PeerRejection> {
         let trust = self.trust.lock().unwrap_or_else(|e| e.into_inner());
-        trust.crl.check_data_plane(&chain.leaf.fields.serial, now_ms, trust.grace_ms).map_err(|e| match e {
-            CrlError::Revoked => PeerRejection::Revoked,
-            _ => PeerRejection::RevocationStale,
-        })
+        trust
+            .crl
+            .check_data_plane(&chain.leaf.fields.serial, now_ms, trust.grace_ms)
+            .map_err(|e| match e {
+                CrlError::Revoked => PeerRejection::Revoked,
+                _ => PeerRejection::RevocationStale,
+            })
     }
 
-    fn check_pin(&mut self, chain: &ValidatedChain, _now_ms: u64) -> Result<PinStatus, PeerRejection> {
+    fn check_pin(
+        &mut self,
+        chain: &ValidatedChain,
+        _now_ms: u64,
+    ) -> Result<PinStatus, PeerRejection> {
         let fields = &chain.leaf.fields;
         let mut trust = self.trust.lock().unwrap_or_else(|e| e.into_inner());
         let key = (fields.subject_a.clone(), fields.subject_b.clone());
         trust.seen.insert(key, chain.fingerprint.clone());
-        trust.last_presented.insert(fields.subject_a.clone(), fields.subject_b.clone());
-        match trust.pins.decide(&fields.subject_a, &fields.subject_b, &chain.fingerprint) {
+        trust
+            .last_presented
+            .insert(fields.subject_a.clone(), fields.subject_b.clone());
+        match trust
+            .pins
+            .decide(&fields.subject_a, &fields.subject_b, &chain.fingerprint)
+        {
             PinDecision::FirstContact => {
-                trust.pins.commit(&fields.subject_a, &fields.subject_b, &chain.fingerprint);
+                trust
+                    .pins
+                    .commit(&fields.subject_a, &fields.subject_b, &chain.fingerprint);
                 Ok(PinStatus::Pinned)
             }
             PinDecision::Match { verified: true } => Ok(PinStatus::Verified),

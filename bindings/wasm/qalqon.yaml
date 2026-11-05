@@ -1,0 +1,12 @@
+name: wasm
+kind: binding
+language: rust
+delivery: wasm
+targets: [web]
+depends_on: [core/qalqon-signal, core/keystore-webcrypto, core/provider-testonly, core/qalqon-conformance]
+toolchain: { cargo: ">=1.85", wasm-bindgen: ">=0.2" }
+build:
+  - cargo build -q -p qalqon-wasm --target wasm32-unknown-unknown
+  - wasm-bindgen --target web --out-dir packages/js/web/wasm target/wasm32-unknown-unknown/debug/qalqon_wasm.wasm
+conformance: node tests/interop/web/driver.mjs conformance tests/conformance/testonly/*.json
+owners: [core-team]

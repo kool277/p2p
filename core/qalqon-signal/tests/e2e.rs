@@ -11,7 +11,9 @@ use qalqon_core::session::Limits;
 use qalqon_core::{relay, wire};
 use qalqon_signal::{ClientCore, ClientOptions, OpResult, OpValue, SavedState};
 use serde_json::json;
-use server_core::{Effect, IssuingCa, PasswordCost, ServerCore, ServerOptions, StoreKind, StoreOperation};
+use server_core::{
+    Effect, IssuingCa, PasswordCost, ServerCore, ServerOptions, StoreKind, StoreOperation,
+};
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use std::time::Duration;
@@ -21,7 +23,11 @@ const PASSWORD: &str = "correct horse battery staple";
 const RELAY_KEY: [u8; 32] = [3; 32];
 const URL: &str = "wss://qalqon.example/qalqon";
 
-const STREAM_CAPS: api::TransportCaps = api::TransportCaps { ordered: true, reliable: true, max_frame_len: 65_553 };
+const STREAM_CAPS: api::TransportCaps = api::TransportCaps {
+    ordered: true,
+    reliable: true,
+    max_frame_len: 65_553,
+};
 
 #[derive(Default)]
 struct Stores {
@@ -30,11 +36,27 @@ struct Stores {
 }
 
 impl Stores {
-    fn perform(&mut self, store: StoreKind, op: StoreOperation, key: Option<String>, record: Option<Vec<u8>>) -> (u32, Option<Vec<u8>>) {
+    fn perform(
+        &mut self,
+        store: StoreKind,
+        op: StoreOperation,
+        key: Option<String>,
+        record: Option<Vec<u8>>,
+    ) -> (u32, Option<Vec<u8>>) {
         match op {
-            StoreOperation::Get => (0, self.tables.entry(store).or_default().get(&key.unwrap()).cloned()),
+            StoreOperation::Get => (
+                0,
+                self.tables
+                    .entry(store)
+                    .or_default()
+                    .get(&key.unwrap())
+                    .cloned(),
+            ),
             StoreOperation::Put => {
-                self.tables.entry(store).or_default().insert(key.unwrap(), record.unwrap());
+                self.tables
+                    .entry(store)
+                    .or_default()
+                    .insert(key.unwrap(), record.unwrap());
                 (0, None)
             }
             StoreOperation::List => {
@@ -50,13 +72,17 @@ impl Stores {
                 (0, Some(serde_json::to_vec(&rows).unwrap()))
             }
             StoreOperation::Append => {
-                self.audit.insert(key.unwrap().parse().unwrap(), record.unwrap());
+                self.audit
+                    .insert(key.unwrap().parse().unwrap(), record.unwrap());
                 (0, None)
             }
             StoreOperation::Head => (0, self.audit.values().next_back().cloned()),
             StoreOperation::Range => {
-                let rows: Vec<serde_json::Value> =
-                    self.audit.values().map(|b| serde_json::from_slice(b).unwrap()).collect();
+                let rows: Vec<serde_json::Value> = self
+                    .audit
+                    .values()
+                    .map(|b| serde_json::from_slice(b).unwrap())
+                    .collect();
                 (0, Some(serde_json::to_vec(&rows).unwrap()))
             }
         }
@@ -110,19 +136,31 @@ impl World {
         let provider: Arc<dyn CryptoProvider> = Arc::new(TestOnlyProvider::new());
         let ca = DevCa::new(provider.clone(), START).unwrap();
         let server_key: Arc<dyn SigningKey> = Arc::from(provider.generate_signing_key().unwrap());
-        let issuing: Arc<dyn SigningKey> =
-            Arc::from(provider.import_signing_key(&ca.issuing_key.export_secret().unwrap()).unwrap());
+        let issuing: Arc<dyn SigningKey> = Arc::from(
+            provider
+                .import_signing_key(&ca.issuing_key.export_secret().unwrap())
+                .unwrap(),
+        );
         let server = ServerCore::new(ServerOptions {
             provider: provider.clone(),
             identity: server_key.clone(),
-            chain: ca.issue_server("qalqon.example", "i1", server_key.as_ref(), START).unwrap(),
+            chain: ca
+                .issue_server("qalqon.example", "i1", server_key.as_ref(), START)
+                .unwrap(),
             ca_bundle: ca.root_cert.clone(),
-            issuing: Some(IssuingCa { key: issuing, certificate: ca.issuing_cert.clone() }),
+            issuing: Some(IssuingCa {
+                key: issuing,
+                certificate: ca.issuing_cert.clone(),
+            }),
             relay_addresses: vec!["wss://relay.example/relay".into()],
             relay_key: RELAY_KEY.to_vec(),
             audit_key: vec![1; 32],
             policy: server_core::policy::Policy::default_document(),
-            password_cost: PasswordCost { m_kib: 256, t: 1, p: 1 },
+            password_cost: PasswordCost {
+                m_kib: 256,
+                t: 1,
+                p: 1,
+            },
             limits: Limits::default(),
             now_ms: START,
         })
@@ -211,9 +249,17 @@ impl World {
                             let _ = self.server.on_close(conn_id);
                         }
                     }
-                    Effect::Store { effect_id, store, operation, key, record } => {
+                    Effect::Store {
+                        effect_id,
+                        store,
+                        operation,
+                        key,
+                        record,
+                    } => {
                         let (status, record) = self.stores.perform(store, operation, key, record);
-                        self.server.complete_effect(effect_id, status, record).unwrap();
+                        self.server
+                            .complete_effect(effect_id, status, record)
+                            .unwrap();
                     }
                     Effect::Alarm { .. } => {}
                 }
@@ -228,8 +274,16 @@ impl World {
     fn perform(&mut self, client: usize, command: TransportCommand) {
         let now = self.now;
         match command {
-            TransportCommand::OpenLink { link_id, kind, initiator, .. } => {
-                let me = LinkRef { client, link: link_id };
+            TransportCommand::OpenLink {
+                link_id,
+                kind,
+                initiator,
+                ..
+            } => {
+                let me = LinkRef {
+                    client,
+                    link: link_id,
+                };
                 match kind {
                     api::LinkKind::Server => {
                         let conn = self.server.accept("203.0.113.5:1000").unwrap();
@@ -250,13 +304,21 @@ impl World {
                                 // Somebody connects first and sends junk. The real peer's
                                 // connection attempt then finds nothing.
                                 self.clients[client].link_opened(now, link_id, STREAM_CAPS);
-                                self.clients[client].frame_received(now, link_id, b"GET / HTTP/1.1\r\n\r\n");
+                                self.clients[client].frame_received(
+                                    now,
+                                    link_id,
+                                    b"GET / HTTP/1.1\r\n\r\n",
+                                );
                                 return;
                             }
                             // The responder listens and sends its candidate through the server.
                             let candidate = format!("listen:{client}:{link_id}");
                             self.listening.insert(candidate.clone(), me);
-                            self.clients[client].signal_received(now, link_id, candidate.as_bytes());
+                            self.clients[client].signal_received(
+                                now,
+                                link_id,
+                                candidate.as_bytes(),
+                            );
                         }
                     }
                     api::LinkKind::Relay => {
@@ -267,7 +329,10 @@ impl World {
             }
             TransportCommand::SendSignal { link_id, blob } => {
                 // The initiator connects to the responder's candidate.
-                let me = LinkRef { client, link: link_id };
+                let me = LinkRef {
+                    client,
+                    link: link_id,
+                };
                 let text = String::from_utf8(blob).unwrap();
                 if let Some(other) = self.listening.remove(&text) {
                     self.routes.insert(me, Route::Direct(other));
@@ -277,7 +342,10 @@ impl World {
                 }
             }
             TransportCommand::SendFrame { link_id, frame } => {
-                let me = LinkRef { client, link: link_id };
+                let me = LinkRef {
+                    client,
+                    link: link_id,
+                };
                 match self.routes.get(&me) {
                     Some(Route::Server(conn)) => {
                         let conn = *conn;
@@ -292,8 +360,14 @@ impl World {
                     Some(Route::Relay { joined: Some(room) }) => {
                         let room = *room;
                         self.relay_seen.push(frame.clone());
-                        let others: Vec<LinkRef> =
-                            self.relay_rooms.get(&room).into_iter().flatten().copied().filter(|l| *l != me).collect();
+                        let others: Vec<LinkRef> = self
+                            .relay_rooms
+                            .get(&room)
+                            .into_iter()
+                            .flatten()
+                            .copied()
+                            .filter(|l| *l != me)
+                            .collect();
                         for other in others {
                             self.clients[other.client].frame_received(now, other.link, &frame);
                         }
@@ -302,7 +376,10 @@ impl World {
                 }
             }
             TransportCommand::CloseLink { link_id } => {
-                let me = LinkRef { client, link: link_id };
+                let me = LinkRef {
+                    client,
+                    link: link_id,
+                };
                 match self.routes.remove(&me) {
                     Some(Route::Server(conn)) => {
                         self.conn_to_link.remove(&conn);
@@ -326,7 +403,10 @@ impl World {
     /// What `infra/relay` does: checks the grant, pairs two clients, then forwards.
     fn relay_join(&mut self, me: LinkRef, join: &[u8]) {
         let (id, token) = relay::parse_join(join).expect("a well-formed join");
-        assert!(relay::check_token(self.provider.as_ref(), &RELAY_KEY, &id, token, self.now), "a bad relay grant");
+        assert!(
+            relay::check_token(self.provider.as_ref(), &RELAY_KEY, &id, token, self.now),
+            "a bad relay grant"
+        );
         self.routes.insert(me, Route::Relay { joined: Some(id) });
         let room = self.relay_rooms.entry(id).or_default();
         room.push(me);
@@ -378,20 +458,34 @@ impl World {
     }
 
     fn create_user(&mut self, user: &str) {
-        self.admin("users.create", json!({ "user_id": user, "password": PASSWORD }));
+        self.admin(
+            "users.create",
+            json!({ "user_id": user, "password": PASSWORD }),
+        );
     }
 
     /// Creates a device with a fresh key and enrols it.
     fn enrolled_device(&mut self, user: &str) -> Device {
-        let token = self.admin("devices.createEnrollmentToken", json!({ "user_id": user }))["token"]
-            .as_str()
-            .unwrap()
-            .to_string();
-        let identity: Arc<dyn SigningKey> = Arc::from(self.provider.generate_signing_key().unwrap());
-        let mut device = Device { identity, chain: None, saved: SavedState::default() };
+        let token =
+            self.admin("devices.createEnrollmentToken", json!({ "user_id": user }))["token"]
+                .as_str()
+                .unwrap()
+                .to_string();
+        let identity: Arc<dyn SigningKey> =
+            Arc::from(self.provider.generate_signing_key().unwrap());
+        let mut device = Device {
+            identity,
+            chain: None,
+            saved: SavedState::default(),
+        };
         let index = self.new_client(&device);
-        let op = self.clients[index]
-            .start_enroll(self.now, api::EnrollmentRequest { enrollment_token: token, device_name: "test".into() });
+        let op = self.clients[index].start_enroll(
+            self.now,
+            api::EnrollmentRequest {
+                enrollment_token: token,
+                device_name: "test".into(),
+            },
+        );
         match self.wait(index, op).expect("enrolment") {
             OpValue::Enrolled { chain, .. } => device.chain = Some(chain),
             other => panic!("unexpected {other:?}"),
@@ -402,14 +496,21 @@ impl World {
 
     fn logged_in(&mut self, user: &str, device: &Device) -> usize {
         let index = self.new_client(device);
-        let credentials =
-            api::Credentials { user_id: user.into(), secret: PASSWORD.as_bytes().to_vec(), mfa_code: None };
+        let credentials = api::Credentials {
+            user_id: user.into(),
+            secret: PASSWORD.as_bytes().to_vec(),
+            mfa_code: None,
+        };
         let op = self.clients[index].start_connect(self.now, credentials);
         self.wait(index, op).expect("login");
         index
     }
 
-    fn take_event(&mut self, client: usize, mut matches: impl FnMut(&api::Event) -> bool) -> api::Event {
+    fn take_event(
+        &mut self,
+        client: usize,
+        mut matches: impl FnMut(&api::Event) -> bool,
+    ) -> api::Event {
         for _ in 0..3000 {
             self.pump();
             if let Some(i) = self.events[client].iter().position(&mut matches) {
@@ -421,13 +522,22 @@ impl World {
     }
 
     /// One client calls another, who accepts. Returns both channel handles.
-    fn call(&mut self, caller: usize, callee: usize, callee_user: &str) -> Result<(u64, u64), ErrorKind> {
+    fn call(
+        &mut self,
+        caller: usize,
+        callee: usize,
+        callee_user: &str,
+    ) -> Result<(u64, u64), ErrorKind> {
         let op = self.clients[caller].open_channel(self.now, peer(callee_user), options());
         let request = self.take_event(callee, |e| matches!(e, api::Event::ChannelRequested { .. }));
-        let api::Event::ChannelRequested { request_id, .. } = request else { unreachable!() };
+        let api::Event::ChannelRequested { request_id, .. } = request else {
+            unreachable!()
+        };
         let accept = self.clients[callee].accept_channel(self.now, &request_id);
         let at_callee = loop {
-            if (self.direct_enabled && !self.stranger_on_direct_port) || self.relay_policy == api::RelayPolicy::RelayOnly {
+            if (self.direct_enabled && !self.stranger_on_direct_port)
+                || self.relay_policy == api::RelayPolicy::RelayOnly
+            {
                 self.pump();
             } else {
                 self.advance(500);
@@ -455,11 +565,19 @@ impl World {
 }
 
 fn peer(user: &str) -> api::PeerRef {
-    api::PeerRef { user_id: user.into(), device_id: None }
+    api::PeerRef {
+        user_id: user.into(),
+        device_id: None,
+    }
 }
 
 fn options() -> api::ChannelOptions {
-    api::ChannelOptions { label: "chat".into(), ordered: true, reliable: true, timeout_ms: None }
+    api::ChannelOptions {
+        label: "chat".into(),
+        ordered: true,
+        reliable: true,
+        timeout_ms: None,
+    }
 }
 
 fn two_users() -> (World, Device, Device) {
@@ -480,7 +598,9 @@ fn the_whole_session_sequence_runs_on_a_direct_path() {
     let (mut world, alice, bob) = two_users();
     let a = world.logged_in("alice", &alice);
     let b = world.logged_in("bob", &bob);
-    assert!(world.events[a].contains(&api::Event::StateChanged { state: api::SessionState::Connected }));
+    assert!(world.events[a].contains(&api::Event::StateChanged {
+        state: api::SessionState::Connected
+    }));
 
     let (at_a, at_b) = world.call(a, b, "bob").unwrap();
 
@@ -488,8 +608,14 @@ fn the_whole_session_sequence_runs_on_a_direct_path() {
     world.clients[a].send(now, at_a, b"hello bob").unwrap();
     world.clients[b].send(now, at_b, b"hello alice").unwrap();
     world.pump();
-    assert_eq!(world.clients[b].receive(at_b).unwrap(), Some(b"hello bob".to_vec()));
-    assert_eq!(world.clients[a].receive(at_a).unwrap(), Some(b"hello alice".to_vec()));
+    assert_eq!(
+        world.clients[b].receive(at_b).unwrap(),
+        Some(b"hello bob".to_vec())
+    );
+    assert_eq!(
+        world.clients[a].receive(at_a).unwrap(),
+        Some(b"hello alice".to_vec())
+    );
     assert_eq!(world.clients[a].receive(at_a).unwrap(), None);
     assert!(world.events[b].contains(&api::Event::MessageAvailable { channel_id: at_b }));
 
@@ -499,35 +625,69 @@ fn the_whole_session_sequence_runs_on_a_direct_path() {
     assert_eq!(info.peer.status, api::VerificationStatus::Pinned);
 
     // Both sides see the same safety number, computed from what each one received.
-    let at_alice = world.clients[a].verify_peer(now, &peer("bob"), None).unwrap();
-    let at_bob = world.clients[b].verify_peer(now, &peer("alice"), None).unwrap();
+    let at_alice = world.clients[a]
+        .verify_peer(now, &peer("bob"), None)
+        .unwrap();
+    let at_bob = world.clients[b]
+        .verify_peer(now, &peer("alice"), None)
+        .unwrap();
     assert_eq!(at_alice.safety_number, at_bob.safety_number);
     assert_eq!(at_alice.safety_number.len(), 60);
 
     // A wrong number is refused, and the right one upgrades the pin.
-    assert_eq!(world.clients[a].verify_peer(now, &peer("bob"), Some("000")).unwrap_err(), ErrorKind::InvalidArgument);
-    let verified = world.clients[a].verify_peer(now, &peer("bob"), Some(&at_alice.safety_number)).unwrap();
+    assert_eq!(
+        world.clients[a]
+            .verify_peer(now, &peer("bob"), Some("000"))
+            .unwrap_err(),
+        ErrorKind::InvalidArgument
+    );
+    let verified = world.clients[a]
+        .verify_peer(now, &peer("bob"), Some(&at_alice.safety_number))
+        .unwrap();
     assert_eq!(verified.status, api::VerificationStatus::Verified);
 
     // Rotation in both directions.
     let op = world.clients[a].rotate_keys(now, Some(&peer("bob")));
     world.wait(a, op).unwrap();
     assert!(world.clients[a].channel_info(at_a).unwrap().key_epoch >= 1);
-    assert!(world.events[a].iter().any(|e| matches!(e, api::Event::KeysRotated { .. })));
+    assert!(
+        world.events[a]
+            .iter()
+            .any(|e| matches!(e, api::Event::KeysRotated { .. }))
+    );
 
     // Data still flows afterwards.
     let now = world.now;
-    world.clients[a].send(now, at_a, b"after the rekey").unwrap();
+    world.clients[a]
+        .send(now, at_a, b"after the rekey")
+        .unwrap();
     world.pump();
-    assert_eq!(world.clients[b].receive(at_b).unwrap(), Some(b"after the rekey".to_vec()));
+    assert_eq!(
+        world.clients[b].receive(at_b).unwrap(),
+        Some(b"after the rekey".to_vec())
+    );
 
     // Alice's local audit chain verifies with only her public key.
-    let export = world.clients[a].export_audit(&api::AuditExportRequest { from_ms: None, to_ms: None }).unwrap();
+    let export = world.clients[a]
+        .export_audit(&api::AuditExportRequest {
+            from_ms: None,
+            to_ms: None,
+        })
+        .unwrap();
     let entries = qalqon_audit::from_jsonl(std::str::from_utf8(&export.events).unwrap()).unwrap();
-    let head = qalqon_audit::verify_chain(world.provider.as_ref(), &world.fingerprint_of(&alice), &entries).unwrap();
+    let head = qalqon_audit::verify_chain(
+        world.provider.as_ref(),
+        &world.fingerprint_of(&alice),
+        &entries,
+    )
+    .unwrap();
     assert_eq!(head, export.chain_head);
     assert!(entries.iter().any(|e| e.event.operation == "login"));
-    assert!(entries.iter().any(|e| e.event.operation == "session.established" && e.event.subject == "bob"));
+    assert!(
+        entries
+            .iter()
+            .any(|e| e.event.operation == "session.established" && e.event.subject == "bob")
+    );
     assert!(entries.iter().any(|e| e.event.operation == "key.rotated"));
     assert!(entries.iter().any(|e| e.event.operation == "pin.changed"));
 
@@ -535,16 +695,30 @@ fn the_whole_session_sequence_runs_on_a_direct_path() {
     let op = world.clients[a].close(world.now);
     world.wait(a, op).unwrap();
     world.pump();
-    assert!(world.events[a].contains(&api::Event::ChannelClosed { channel_id: at_a, clean: true }));
-    assert!(world.events[b].contains(&api::Event::ChannelClosed { channel_id: at_b, clean: true }));
+    assert!(world.events[a].contains(&api::Event::ChannelClosed {
+        channel_id: at_a,
+        clean: true
+    }));
+    assert!(world.events[b].contains(&api::Event::ChannelClosed {
+        channel_id: at_b,
+        clean: true
+    }));
     assert!(world.clients[a].is_closed());
 
     // The server's audit chain verifies, and it never saw the application's data.
     let verified = world.admin("audit.verify", json!({}));
     assert_eq!(verified["ok"], true);
-    assert!(world.server.metrics().contains("qalqon_data_sessions_direct_total 1"));
+    assert!(
+        world
+            .server
+            .metrics()
+            .contains("qalqon_data_sessions_direct_total 1")
+    );
     for frame in &world.direct_seen {
-        assert!(!contains(frame, b"hello bob") && !contains(frame, b"after the rekey"), "plaintext on the wire");
+        assert!(
+            !contains(frame, b"hello bob") && !contains(frame, b"after the rekey"),
+            "plaintext on the wire"
+        );
     }
 }
 
@@ -555,24 +729,54 @@ fn the_relay_path_carries_only_ciphertext() {
     let a = world.logged_in("alice", &alice);
     let b = world.logged_in("bob", &bob);
     let (at_a, at_b) = world.call(a, b, "bob").unwrap();
-    assert_eq!(world.clients[a].channel_info(at_a).unwrap().path, api::PathKind::Relayed);
-    assert!(world.direct_seen.is_empty(), "relayOnly must never use a direct path");
+    assert_eq!(
+        world.clients[a].channel_info(at_a).unwrap().path,
+        api::PathKind::Relayed
+    );
+    assert!(
+        world.direct_seen.is_empty(),
+        "relayOnly must never use a direct path"
+    );
 
     let secret = b"a secret only the two clients may read";
     let now = world.now;
     world.clients[a].send(now, at_a, secret).unwrap();
     world.pump();
-    assert_eq!(world.clients[b].receive(at_b).unwrap(), Some(secret.to_vec()));
+    assert_eq!(
+        world.clients[b].receive(at_b).unwrap(),
+        Some(secret.to_vec())
+    );
     assert!(!world.relay_seen.is_empty());
     for frame in &world.relay_seen {
-        assert!(!contains(frame, secret), "plaintext passed through the relay");
-        assert_eq!(&frame[..2], &wire::MAGIC, "the relay forwards frames unchanged");
+        assert!(
+            !contains(frame, secret),
+            "plaintext passed through the relay"
+        );
+        assert_eq!(
+            &frame[..2],
+            &wire::MAGIC,
+            "the relay forwards frames unchanged"
+        );
     }
     // XX_FINISH hides I's certificate from the relay and the network.
-    let finish = world.relay_seen.iter().find(|f| f[5] == wire::msg::XX_FINISH).unwrap();
-    assert!(!contains(finish, b"alice"), "I's identity is visible on the relay");
-    let resp = world.relay_seen.iter().find(|f| f[5] == wire::msg::XX_RESP).unwrap();
-    assert!(!contains(resp, b"bob"), "R's identity is visible to a passive observer");
+    let finish = world
+        .relay_seen
+        .iter()
+        .find(|f| f[5] == wire::msg::XX_FINISH)
+        .unwrap();
+    assert!(
+        !contains(finish, b"alice"),
+        "I's identity is visible on the relay"
+    );
+    let resp = world
+        .relay_seen
+        .iter()
+        .find(|f| f[5] == wire::msg::XX_RESP)
+        .unwrap();
+    assert!(
+        !contains(resp, b"bob"),
+        "R's identity is visible to a passive observer"
+    );
 }
 
 #[test]
@@ -582,13 +786,30 @@ fn prefer_direct_falls_back_to_the_relay_when_no_direct_path_exists() {
     let a = world.logged_in("alice", &alice);
     let b = world.logged_in("bob", &bob);
     let (at_a, at_b) = world.call(a, b, "bob").unwrap();
-    assert_eq!(world.clients[a].channel_info(at_a).unwrap().path, api::PathKind::Relayed);
-    assert_eq!(world.clients[b].channel_info(at_b).unwrap().path, api::PathKind::Relayed);
+    assert_eq!(
+        world.clients[a].channel_info(at_a).unwrap().path,
+        api::PathKind::Relayed
+    );
+    assert_eq!(
+        world.clients[b].channel_info(at_b).unwrap().path,
+        api::PathKind::Relayed
+    );
     let now = world.now;
-    world.clients[a].send(now, at_a, b"through the relay").unwrap();
+    world.clients[a]
+        .send(now, at_a, b"through the relay")
+        .unwrap();
     world.pump();
-    assert_eq!(world.clients[b].receive(at_b).unwrap(), Some(b"through the relay".to_vec()));
-    assert!(world.events[a].iter().any(|e| matches!(e, api::Event::PathChanged { path: api::PathKind::Relayed, .. })));
+    assert_eq!(
+        world.clients[b].receive(at_b).unwrap(),
+        Some(b"through the relay".to_vec())
+    );
+    assert!(world.events[a].iter().any(|e| matches!(
+        e,
+        api::Event::PathChanged {
+            path: api::PathKind::Relayed,
+            ..
+        }
+    )));
 }
 
 #[test]
@@ -598,11 +819,17 @@ fn a_stranger_on_the_direct_port_does_not_cost_the_call() {
     let a = world.logged_in("alice", &alice);
     let b = world.logged_in("bob", &bob);
     let (at_a, at_b) = world.call(a, b, "bob").unwrap();
-    assert_eq!(world.clients[a].channel_info(at_a).unwrap().path, api::PathKind::Relayed);
+    assert_eq!(
+        world.clients[a].channel_info(at_a).unwrap().path,
+        api::PathKind::Relayed
+    );
     let now = world.now;
     world.clients[a].send(now, at_a, b"still works").unwrap();
     world.pump();
-    assert_eq!(world.clients[b].receive(at_b).unwrap(), Some(b"still works".to_vec()));
+    assert_eq!(
+        world.clients[b].receive(at_b).unwrap(),
+        Some(b"still works".to_vec())
+    );
 }
 
 #[test]
@@ -612,7 +839,10 @@ fn direct_only_with_no_path_reports_peer_unreachable() {
     world.relay_policy = api::RelayPolicy::DirectOnly;
     let a = world.logged_in("alice", &alice);
     let b = world.logged_in("bob", &bob);
-    assert_eq!(world.call(a, b, "bob").unwrap_err(), ErrorKind::PeerUnreachable);
+    assert_eq!(
+        world.call(a, b, "bob").unwrap_err(),
+        ErrorKind::PeerUnreachable
+    );
 }
 
 #[test]
@@ -626,7 +856,14 @@ fn declined_offline_and_unknown_peers_all_report_peer_unavailable() {
 
     let op = world.clients[a].open_channel(world.now, peer("bob"), options());
     let request = world.take_event(b, |e| matches!(e, api::Event::ChannelRequested { .. }));
-    let api::Event::ChannelRequested { request_id, peer: shown, .. } = request else { unreachable!() };
+    let api::Event::ChannelRequested {
+        request_id,
+        peer: shown,
+        ..
+    } = request
+    else {
+        unreachable!()
+    };
     assert_eq!(shown.user_id, "alice");
     assert_eq!(shown.status, api::VerificationStatus::Unverified);
     let now = world.now;
@@ -640,7 +877,10 @@ fn a_changed_key_blocks_until_the_user_re_verifies() {
     let a = world.logged_in("alice", &alice);
     let b = world.logged_in("bob", &bob);
     let (at_a, _) = world.call(a, b, "bob").unwrap();
-    assert_eq!(world.clients[a].channel_info(at_a).unwrap().peer.status, api::VerificationStatus::Pinned);
+    assert_eq!(
+        world.clients[a].channel_info(at_a).unwrap().peer.status,
+        api::VerificationStatus::Pinned
+    );
 
     // Close both, keeping alice's pins. Bob then enrols again with a new key, which is
     // all a malicious server needs to be able to do: the CA issues it a valid certificate.
@@ -652,27 +892,55 @@ fn a_changed_key_blocks_until_the_user_re_verifies() {
 
     let op = world.clients[a].open_channel(world.now, peer("bob"), options());
     let request = world.take_event(b2, |e| matches!(e, api::Event::ChannelRequested { .. }));
-    let api::Event::ChannelRequested { request_id, .. } = request else { unreachable!() };
+    let api::Event::ChannelRequested { request_id, .. } = request else {
+        unreachable!()
+    };
     let accept = world.clients[b2].accept_channel(world.now, &request_id);
-    assert_eq!(world.wait(a, op).unwrap_err(), ErrorKind::PeerIdentityChanged, "a pinned user's new device must block");
+    assert_eq!(
+        world.wait(a, op).unwrap_err(),
+        ErrorKind::PeerIdentityChanged,
+        "a pinned user's new device must block"
+    );
     let changed = world.take_event(a, |e| matches!(e, api::Event::PeerIdentityChanged { .. }));
-    let api::Event::PeerIdentityChanged { peer: shown } = changed else { unreachable!() };
+    let api::Event::PeerIdentityChanged { peer: shown } = changed else {
+        unreachable!()
+    };
     assert_eq!(shown.status, api::VerificationStatus::Changed);
-    assert_eq!(shown.fingerprint, crypto_provider::to_hex(&world.fingerprint_of(&new_bob)));
+    assert_eq!(
+        shown.fingerprint,
+        crypto_provider::to_hex(&world.fingerprint_of(&new_bob))
+    );
     let _ = accept;
 
     // The user compares the new safety number out of band, and then the call works.
     let identity = world.clients[a]
-        .verify_peer(world.now, &api::PeerRef { user_id: "bob".into(), device_id: Some(shown.device_id.clone()) }, None)
+        .verify_peer(
+            world.now,
+            &api::PeerRef {
+                user_id: "bob".into(),
+                device_id: Some(shown.device_id.clone()),
+            },
+            None,
+        )
         .unwrap();
     assert_eq!(identity.fingerprint, shown.fingerprint);
     let number = identity.safety_number.clone();
     let now = world.now;
     world.clients[a]
-        .verify_peer(now, &api::PeerRef { user_id: "bob".into(), device_id: Some(shown.device_id) }, Some(&number))
+        .verify_peer(
+            now,
+            &api::PeerRef {
+                user_id: "bob".into(),
+                device_id: Some(shown.device_id),
+            },
+            Some(&number),
+        )
         .unwrap();
     let (at_a, _) = world.call(a, b2, "bob").unwrap();
-    assert_eq!(world.clients[a].channel_info(at_a).unwrap().peer.status, api::VerificationStatus::Verified);
+    assert_eq!(
+        world.clients[a].channel_info(at_a).unwrap().peer.status,
+        api::VerificationStatus::Verified
+    );
 }
 
 #[test]
@@ -688,7 +956,11 @@ fn the_warn_policy_lets_a_changed_identity_through_but_says_so() {
     let new_bob = world.enrolled_device("bob");
     let b2 = world.logged_in("bob", &new_bob);
     world.call(a, b2, "bob").unwrap();
-    assert!(world.events[a].iter().any(|e| matches!(e, api::Event::PeerIdentityChanged { .. })));
+    assert!(
+        world.events[a]
+            .iter()
+            .any(|e| matches!(e, api::Event::PeerIdentityChanged { .. }))
+    );
 }
 
 #[test]
@@ -697,11 +969,18 @@ fn pins_and_the_audit_chain_survive_a_restart() {
     let a = world.logged_in("alice", &alice);
     let b = world.logged_in("bob", &bob);
     world.call(a, b, "bob").unwrap();
-    let saved = world.clients[a].take_state_to_save().expect("something to save");
+    let saved = world.clients[a]
+        .take_state_to_save()
+        .expect("something to save");
     assert!(!saved.pins.is_empty());
     assert!(!saved.audit_entries.is_empty());
     let text = serde_json::to_string(&saved).unwrap();
-    assert!(!text.contains(&crypto_provider::to_hex(&alice.identity.export_secret().unwrap())), "keys must not be saved");
+    assert!(
+        !text.contains(&crypto_provider::to_hex(
+            &alice.identity.export_secret().unwrap()
+        )),
+        "keys must not be saved"
+    );
     alice.saved = serde_json::from_str(&text).unwrap();
 
     let op = world.clients[a].close(world.now);
@@ -716,14 +995,29 @@ fn pins_and_the_audit_chain_survive_a_restart() {
     let b2 = world.logged_in("bob", &new_bob);
     let op = world.clients[a2].open_channel(world.now, peer("bob"), options());
     let request = world.take_event(b2, |e| matches!(e, api::Event::ChannelRequested { .. }));
-    let api::Event::ChannelRequested { request_id, .. } = request else { unreachable!() };
+    let api::Event::ChannelRequested { request_id, .. } = request else {
+        unreachable!()
+    };
     world.clients[b2].accept_channel(world.now, &request_id);
-    assert_eq!(world.wait(a2, op).unwrap_err(), ErrorKind::PeerIdentityChanged);
+    assert_eq!(
+        world.wait(a2, op).unwrap_err(),
+        ErrorKind::PeerIdentityChanged
+    );
 
     // The chain continues from where it stopped.
-    let export = world.clients[a2].export_audit(&api::AuditExportRequest { from_ms: None, to_ms: None }).unwrap();
+    let export = world.clients[a2]
+        .export_audit(&api::AuditExportRequest {
+            from_ms: None,
+            to_ms: None,
+        })
+        .unwrap();
     let entries = qalqon_audit::from_jsonl(std::str::from_utf8(&export.events).unwrap()).unwrap();
-    qalqon_audit::verify_chain(world.provider.as_ref(), &world.fingerprint_of(&alice), &entries).expect("the chain must continue unbroken");
+    qalqon_audit::verify_chain(
+        world.provider.as_ref(),
+        &world.fingerprint_of(&alice),
+        &entries,
+    )
+    .expect("the chain must continue unbroken");
 }
 
 #[test]
@@ -732,7 +1026,12 @@ fn a_second_call_omits_the_certificate_chain() {
     let a = world.logged_in("alice", &alice);
     let b = world.logged_in("bob", &bob);
     world.call(a, b, "bob").unwrap();
-    let first = world.direct_seen.iter().find(|f| f[5] == wire::msg::XX_RESP).unwrap().len();
+    let first = world
+        .direct_seen
+        .iter()
+        .find(|f| f[5] == wire::msg::XX_RESP)
+        .unwrap()
+        .len();
     let saved = world.clients[a].take_state_to_save().unwrap();
 
     let op = world.clients[a].close(world.now);
@@ -744,8 +1043,16 @@ fn a_second_call_omits_the_certificate_chain() {
     alice_again.saved = saved;
     let a2 = world.logged_in("alice", &alice_again);
     world.call(a2, b, "bob").unwrap();
-    let second = world.direct_seen.iter().find(|f| f[5] == wire::msg::XX_RESP).unwrap().len();
-    assert!(second < first, "the second XX_RESP should omit the chain: {second} vs {first}");
+    let second = world
+        .direct_seen
+        .iter()
+        .find(|f| f[5] == wire::msg::XX_RESP)
+        .unwrap()
+        .len();
+    assert!(
+        second < first,
+        "the second XX_RESP should omit the chain: {second} vs {first}"
+    );
 }
 
 #[test]
@@ -754,56 +1061,115 @@ fn a_further_channel_multiplexes_and_the_application_decides() {
     let a = world.logged_in("alice", &alice);
     let b = world.logged_in("bob", &bob);
     let (first_a, first_b) = world.call(a, b, "bob").unwrap();
-    let handshakes = world.direct_seen.iter().filter(|f| f[5] == wire::msg::XX_INIT).count();
+    let handshakes = world
+        .direct_seen
+        .iter()
+        .filter(|f| f[5] == wire::msg::XX_INIT)
+        .count();
 
-    let op = world.clients[a].open_channel(world.now, peer("bob"), api::ChannelOptions { label: "files".into(), ..options() });
+    let op = world.clients[a].open_channel(
+        world.now,
+        peer("bob"),
+        api::ChannelOptions {
+            label: "files".into(),
+            ..options()
+        },
+    );
     let request = world.take_event(b, |e| matches!(e, api::Event::ChannelRequested { .. }));
-    let api::Event::ChannelRequested { request_id, options: asked, .. } = request else { unreachable!() };
+    let api::Event::ChannelRequested {
+        request_id,
+        options: asked,
+        ..
+    } = request
+    else {
+        unreachable!()
+    };
     assert_eq!(asked.label, "files");
     let accept = world.clients[b].accept_channel(world.now, &request_id);
-    let OpValue::Channel(second_b) = world.wait(b, accept).unwrap() else { panic!() };
-    let OpValue::Channel(second_a) = world.wait(a, op).unwrap() else { panic!() };
-    assert_eq!(world.direct_seen.iter().filter(|f| f[5] == wire::msg::XX_INIT).count(), handshakes, "no new handshake");
+    let OpValue::Channel(second_b) = world.wait(b, accept).unwrap() else {
+        panic!()
+    };
+    let OpValue::Channel(second_a) = world.wait(a, op).unwrap() else {
+        panic!()
+    };
+    assert_eq!(
+        world
+            .direct_seen
+            .iter()
+            .filter(|f| f[5] == wire::msg::XX_INIT)
+            .count(),
+        handshakes,
+        "no new handshake"
+    );
     assert_ne!(first_a, second_a);
 
     let now = world.now;
     world.clients[a].send(now, second_a, b"on files").unwrap();
     world.clients[a].send(now, first_a, b"on chat").unwrap();
     world.pump();
-    assert_eq!(world.clients[b].receive(second_b).unwrap(), Some(b"on files".to_vec()));
-    assert_eq!(world.clients[b].receive(first_b).unwrap(), Some(b"on chat".to_vec()));
+    assert_eq!(
+        world.clients[b].receive(second_b).unwrap(),
+        Some(b"on files".to_vec())
+    );
+    assert_eq!(
+        world.clients[b].receive(first_b).unwrap(),
+        Some(b"on chat".to_vec())
+    );
 
     // Closing one leaves the other.
     let op = world.clients[a].close_channel(world.now, second_a);
     world.wait(a, op).unwrap();
-    assert_eq!(world.clients[a].send(world.now, second_a, b"x").unwrap_err(), ErrorKind::Closed);
+    assert_eq!(
+        world.clients[a]
+            .send(world.now, second_a, b"x")
+            .unwrap_err(),
+        ErrorKind::Closed
+    );
     let now = world.now;
     world.clients[a].send(now, first_a, b"still open").unwrap();
     world.pump();
-    assert_eq!(world.clients[b].receive(first_b).unwrap(), Some(b"still open".to_vec()));
+    assert_eq!(
+        world.clients[b].receive(first_b).unwrap(),
+        Some(b"still open".to_vec())
+    );
 }
 
 #[test]
 fn revoking_a_peer_stops_new_sessions_at_the_data_plane_too() {
     let (mut world, alice, bob) = two_users();
-    let device_b = qalqon_core::cert::parse_many(world.provider.as_ref(), bob.chain.as_ref().unwrap()).unwrap()[0]
-        .fields
-        .subject_b
-        .clone();
+    let device_b =
+        qalqon_core::cert::parse_many(world.provider.as_ref(), bob.chain.as_ref().unwrap())
+            .unwrap()[0]
+            .fields
+            .subject_b
+            .clone();
     let b = world.logged_in("bob", &bob);
     world.admin("devices.revoke", json!({ "device_id": device_b }));
     world.pump();
-    assert!(world.clients[b].is_closed(), "the revoked device's session must end");
+    assert!(
+        world.clients[b].is_closed(),
+        "the revoked device's session must end"
+    );
 
     // Alice connects afterwards, so her CRL lists bob. A revoked client cannot log in,
     // and even if a server let one rendezvous, her own check would stop it.
     let _ = alice;
-    let chain = world.ca.issue_device("bob", "other", bob.identity.as_ref(), world.now).unwrap();
+    let chain = world
+        .ca
+        .issue_device("bob", "other", bob.identity.as_ref(), world.now)
+        .unwrap();
     assert!(!chain.is_empty());
     let again = world.new_client(&bob);
-    let credentials = api::Credentials { user_id: "bob".into(), secret: PASSWORD.as_bytes().to_vec(), mfa_code: None };
+    let credentials = api::Credentials {
+        user_id: "bob".into(),
+        secret: PASSWORD.as_bytes().to_vec(),
+        mfa_code: None,
+    };
     let op = world.clients[again].start_connect(world.now, credentials);
-    assert!(world.wait(again, op).is_err(), "a revoked certificate must not log in");
+    assert!(
+        world.wait(again, op).is_err(),
+        "a revoked certificate must not log in"
+    );
 }
 
 #[test]
@@ -817,24 +1183,47 @@ fn a_stale_crl_blocks_new_peer_sessions() {
     world.now += 25 * 60 * 60 * 1000;
     let op = world.clients[a].open_channel(world.now, peer("bob"), options());
     let request = world.take_event(b, |e| matches!(e, api::Event::ChannelRequested { .. }));
-    let api::Event::ChannelRequested { request_id, .. } = request else { unreachable!() };
+    let api::Event::ChannelRequested { request_id, .. } = request else {
+        unreachable!()
+    };
     world.clients[b].accept_channel(world.now, &request_id);
-    assert_eq!(world.wait(a, op).unwrap_err(), ErrorKind::RevocationDataStale);
+    assert_eq!(
+        world.wait(a, op).unwrap_err(),
+        ErrorKind::RevocationDataStale
+    );
 }
 
 #[test]
 fn wrong_passwords_and_unenrolled_devices_are_reported_generically() {
     let (mut world, alice, _) = two_users();
     let a = world.new_client(&alice);
-    let bad = api::Credentials { user_id: "alice".into(), secret: b"wrong password here".to_vec(), mfa_code: None };
+    let bad = api::Credentials {
+        user_id: "alice".into(),
+        secret: b"wrong password here".to_vec(),
+        mfa_code: None,
+    };
     let op = world.clients[a].start_connect(world.now, bad);
-    assert_eq!(world.wait(a, op).unwrap_err(), ErrorKind::AuthenticationFailed);
+    assert_eq!(
+        world.wait(a, op).unwrap_err(),
+        ErrorKind::AuthenticationFailed
+    );
 
     let identity: Arc<dyn SigningKey> = Arc::from(world.provider.generate_signing_key().unwrap());
-    let unenrolled = world.new_client(&Device { identity, chain: None, saved: SavedState::default() });
-    let credentials = api::Credentials { user_id: "alice".into(), secret: PASSWORD.as_bytes().to_vec(), mfa_code: None };
+    let unenrolled = world.new_client(&Device {
+        identity,
+        chain: None,
+        saved: SavedState::default(),
+    });
+    let credentials = api::Credentials {
+        user_id: "alice".into(),
+        secret: PASSWORD.as_bytes().to_vec(),
+        mfa_code: None,
+    };
     let op = world.clients[unenrolled].start_connect(world.now, credentials);
-    assert_eq!(world.wait(unenrolled, op).unwrap_err(), ErrorKind::NotEnrolled);
+    assert_eq!(
+        world.wait(unenrolled, op).unwrap_err(),
+        ErrorKind::NotEnrolled
+    );
 }
 
 #[test]
@@ -842,11 +1231,23 @@ fn enrolment_with_a_bad_token_is_rejected() {
     let mut world = World::new();
     world.create_user("alice");
     let identity: Arc<dyn SigningKey> = Arc::from(world.provider.generate_signing_key().unwrap());
-    let device = Device { identity, chain: None, saved: SavedState::default() };
+    let device = Device {
+        identity,
+        chain: None,
+        saved: SavedState::default(),
+    };
     let index = world.new_client(&device);
-    let op = world.clients[index]
-        .start_enroll(world.now, api::EnrollmentRequest { enrollment_token: "alice:bad".into(), device_name: "x".into() });
-    assert_eq!(world.wait(index, op).unwrap_err(), ErrorKind::EnrollmentRejected);
+    let op = world.clients[index].start_enroll(
+        world.now,
+        api::EnrollmentRequest {
+            enrollment_token: "alice:bad".into(),
+            device_name: "x".into(),
+        },
+    );
+    assert_eq!(
+        world.wait(index, op).unwrap_err(),
+        ErrorKind::EnrollmentRejected
+    );
 }
 
 #[test]
@@ -870,8 +1271,14 @@ fn plain_ws_is_refused_except_on_loopback() {
             START,
         )
     };
-    assert_eq!(make("ws://qalqon.example/qalqon").unwrap_err(), ErrorKind::InvalidArgument);
-    assert_eq!(make("http://qalqon.example").unwrap_err(), ErrorKind::InvalidArgument);
+    assert_eq!(
+        make("ws://qalqon.example/qalqon").unwrap_err(),
+        ErrorKind::InvalidArgument
+    );
+    assert_eq!(
+        make("http://qalqon.example").unwrap_err(),
+        ErrorKind::InvalidArgument
+    );
     assert!(make("wss://qalqon.example/qalqon").is_ok());
     assert!(make("ws://127.0.0.1:8080/qalqon").is_ok());
 }
@@ -888,11 +1295,19 @@ fn losing_the_server_ends_the_session_and_every_channel() {
         .find(|(link, route)| link.client == a && matches!(route, Route::Server(_)))
         .map(|(link, _)| link.link)
         .unwrap();
-    world.routes.retain(|link, _| !(link.client == a && link.link == control));
+    world
+        .routes
+        .retain(|link, _| !(link.client == a && link.link == control));
     let now = world.now;
     world.clients[a].link_closed(now, control);
     world.pump();
-    assert!(world.events[a].contains(&api::Event::StateChanged { state: api::SessionState::Closed }));
+    assert!(world.events[a].contains(&api::Event::StateChanged {
+        state: api::SessionState::Closed
+    }));
     world.advance(10_000);
-    assert!(world.events[a].iter().any(|e| matches!(e, api::Event::ChannelClosed { channel_id, .. } if *channel_id == at_a)));
+    assert!(
+        world.events[a].iter().any(
+            |e| matches!(e, api::Event::ChannelClosed { channel_id, .. } if *channel_id == at_a)
+        )
+    );
 }

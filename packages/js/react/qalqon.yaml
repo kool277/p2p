@@ -1,0 +1,9 @@
+name: react
+kind: package
+language: javascript
+framework: react
+delivery: wasm
+targets: [web]
+depends_on: [packages/js/web]
+toolchain: { node: ">=22" }
+owners: [core-team]

@@ -1,0 +1,25 @@
+(* Property 6. I offered both suites, and yet an honest peer's weak suite was accepted. This must be unreachable.
+
+   Sessions run with every identity key private. honest_run.pv shows that the honest run
+   completes, so this is not vacuous. *)
+
+set reconstructTrace = false.
+
+query a: id, h: bitstring, k1: key, k2: key;
+    event(IFinish(a, bob, offer_both, suite_weak, h, k1, k2)).
+
+process
+    new skca: skey;
+    new ska: skey;
+    new skb: skey;
+    let capk = pk(skca) in
+    let chain_a = cert(alice, pk(ska), skca) in
+    let chain_b = cert(bob, pk(skb), skca) in
+    out(c, (capk, pk(ska), pk(skb), chain_a, chain_b));
+    (
+        (!Initiator(alice, ska, chain_a, capk, false))
+      | (!Responder(alice, ska, chain_a, capk, false))
+      | (!Initiator(bob, skb, chain_b, capk, false))
+      | (!Responder(bob, skb, chain_b, capk, false))
+      | (!Registrar(skca))
+    )

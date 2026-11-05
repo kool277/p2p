@@ -1,0 +1,9 @@
+name: {{name}}
+kind: binding
+language: python
+delivery: sidecar
+targets: [linux-x64]
+depends_on: [core/sidecar]
+toolchain: { python3: ">=3.10" }
+conformance: "python3 bindings/{{name}}/conformance.py tests/conformance/testonly/*.json"
+owners: [unowned]

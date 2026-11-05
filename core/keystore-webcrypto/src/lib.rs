@@ -18,7 +18,9 @@ const IV_LEN: usize = 12;
 
 fn subtle() -> Result<SubtleCrypto, JsValue> {
     let scope = js_sys::global();
-    let worker: WorkerGlobalScope = scope.dyn_into().map_err(|_| JsValue::from_str("this must run in a Web Worker"))?;
+    let worker: WorkerGlobalScope = scope
+        .dyn_into()
+        .map_err(|_| JsValue::from_str("this must run in a Web Worker"))?;
     Ok(worker.crypto()?.subtle())
 }
 
@@ -42,13 +44,17 @@ async fn wrap(
     wrapping_key: &CryptoKey,
     key: &dyn SigningKey,
 ) -> Result<Vec<u8>, JsValue> {
-    let secret = key.export_secret().ok_or_else(|| JsValue::from_str("this key cannot be wrapped"))?;
+    let secret = key
+        .export_secret()
+        .ok_or_else(|| JsValue::from_str("this key cannot be wrapped"))?;
     let mut iv = [0u8; IV_LEN];
-    provider.random(&mut iv).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    provider
+        .random(&mut iv)
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
     // Web Crypto copies its input before the promise resolves, so this copy of the secret
     // lives only in WebAssembly memory and in the browser's implementation.
-    let mut input = Zeroizing::new(secret.to_vec());
-    let promise = subtle()?.encrypt_with_object_and_u8_array(&params(&iv), wrapping_key, &mut input)?;
+    let input = Zeroizing::new(secret.to_vec());
+    let promise = subtle()?.encrypt_with_object_and_u8_array(&params(&iv), wrapping_key, &input)?;
     let sealed = Uint8Array::new(&JsFuture::from(promise).await?).to_vec();
     let mut out = iv.to_vec();
     out.extend_from_slice(&sealed);
@@ -60,7 +66,9 @@ pub async fn create_identity(
     provider: &dyn CryptoProvider,
     wrapping_key: &CryptoKey,
 ) -> Result<(Box<dyn SigningKey>, Vec<u8>), JsValue> {
-    let key = provider.generate_signing_key().map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let key = provider
+        .generate_signing_key()
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
     let wrapped = wrap(provider, wrapping_key, key.as_ref()).await?;
     Ok((key, wrapped))
 }
@@ -72,7 +80,9 @@ pub async fn open_identity(
     wrapped: &[u8],
 ) -> Result<Box<dyn SigningKey>, JsValue> {
     let secret = unwrap(wrapping_key, wrapped).await?;
-    provider.import_signing_key(&secret).map_err(|e| JsValue::from_str(&e.to_string()))
+    provider
+        .import_signing_key(&secret)
+        .map_err(|e| JsValue::from_str(&e.to_string()))
 }
 
 /// Reverses [`wrap`].
@@ -81,8 +91,7 @@ async fn unwrap(wrapping_key: &CryptoKey, wrapped: &[u8]) -> Result<Secret, JsVa
         return Err(JsValue::from_str("the wrapped key is too short"));
     }
     let (iv, sealed) = wrapped.split_at(IV_LEN);
-    let mut input = sealed.to_vec();
-    let promise = subtle()?.decrypt_with_object_and_u8_array(&params(iv), wrapping_key, &mut input)?;
+    let promise = subtle()?.decrypt_with_object_and_u8_array(&params(iv), wrapping_key, sealed)?;
     let plain = Uint8Array::new(&JsFuture::from(promise).await?);
     let mut bytes = Zeroizing::new(vec![0u8; plain.length() as usize]);
     plain.copy_to(&mut bytes);

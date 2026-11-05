@@ -1,0 +1,8 @@
+name: qalqon-transport-tcp
+kind: core
+language: rust
+delivery: rust
+targets: [linux-x64]
+depends_on: [core/qalqon-transport]
+toolchain: { cargo: ">=1.85" }
+owners: [core-team]

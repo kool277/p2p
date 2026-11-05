@@ -25,11 +25,19 @@ fn main() {
             "check" => {
                 let committed = std::fs::read_to_string(&path).unwrap_or_default();
                 if committed != text {
-                    eprintln!("{} is stale: run `vectors write {}`", path.display(), dir.display());
+                    eprintln!(
+                        "{} is stale: run `vectors write {}`",
+                        path.display(),
+                        dir.display()
+                    );
                     failed = true;
                 }
                 let report = qalqon_conformance::run_file(&committed);
-                println!("{name}: {} passed, {} failed", report.passed, report.failed.len());
+                println!(
+                    "{name}: {} passed, {} failed",
+                    report.passed,
+                    report.failed.len()
+                );
                 for failure in &report.failed {
                     eprintln!("  {failure}");
                     failed = true;

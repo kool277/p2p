@@ -14,7 +14,10 @@ use serde_json::json;
 use std::time::{Duration, Instant};
 
 fn value(args: &[String], flag: &str) -> Option<String> {
-    args.iter().position(|a| a == flag).and_then(|i| args.get(i + 1)).cloned()
+    args.iter()
+        .position(|a| a == flag)
+        .and_then(|i| args.get(i + 1))
+        .cloned()
 }
 
 fn required(args: &[String], flag: &str) -> Result<String, String> {
@@ -31,7 +34,10 @@ fn config(args: &[String]) -> Result<api::SessionConfig, String> {
     Ok(api::SessionConfig {
         server_url: required(args, "--server")?,
         ca_bundle: hex::decode(ca.trim()).map_err(|_| "--ca is not hex")?,
-        key_store: api::KeyStoreConfig { kind: api::KeyStoreKind::OsDefault, uri: None },
+        key_store: api::KeyStoreConfig {
+            kind: api::KeyStoreKind::OsDefault,
+            uri: None,
+        },
         data_dir: Some(required(args, "--data")?),
         relay_policy,
         identity_change_policy: None,
@@ -42,18 +48,27 @@ fn config(args: &[String]) -> Result<api::SessionConfig, String> {
 
 fn credentials(args: &[String]) -> Result<api::Credentials, String> {
     let password = std::env::var("QALQON_PASSWORD").map_err(|_| "QALQON_PASSWORD is not set")?;
-    Ok(api::Credentials { user_id: required(args, "--user")?, secret: password.into_bytes(), mfa_code: None })
+    Ok(api::Credentials {
+        user_id: required(args, "--user")?,
+        secret: password.into_bytes(),
+        mfa_code: None,
+    })
 }
 
 fn say(value: serde_json::Value) {
     println!("{value}");
 }
 
-fn wait_for_channel_request(session: &qalqon_sdk::Session, timeout: Duration) -> Result<(String, api::PeerIdentity), String> {
+fn wait_for_channel_request(
+    session: &qalqon_sdk::Session,
+    timeout: Duration,
+) -> Result<(String, api::PeerIdentity), String> {
     let deadline = Instant::now() + timeout;
     while Instant::now() < deadline {
         match session.next_event(200).map_err(|e| e.to_string())? {
-            Some(api::Event::ChannelRequested { request_id, peer, .. }) => return Ok((request_id, peer)),
+            Some(api::Event::ChannelRequested {
+                request_id, peer, ..
+            }) => return Ok((request_id, peer)),
             Some(event) => say(json!({ "event": event })),
             None => {}
         }
@@ -62,12 +77,25 @@ fn wait_for_channel_request(session: &qalqon_sdk::Session, timeout: Duration) ->
 }
 
 fn run_call(args: &[String]) -> Result<(), String> {
-    let session = qalqon_sdk::connect(config(args)?, credentials(args)?).map_err(|e| e.to_string())?;
+    let session =
+        qalqon_sdk::connect(config(args)?, credentials(args)?).map_err(|e| e.to_string())?;
     say(json!({ "state": "connected" }));
-    let records: u32 = value(args, "--records").map_or(Ok(1000), |v| v.parse()).map_err(|_| "--records is not a number")?;
-    let peer = api::PeerRef { user_id: required(args, "--peer")?, device_id: None };
-    let options = api::ChannelOptions { label: "interop".into(), ordered: true, reliable: true, timeout_ms: None };
-    let channel = session.open_channel(peer.clone(), options).map_err(|e| e.to_string())?;
+    let records: u32 = value(args, "--records")
+        .map_or(Ok(1000), |v| v.parse())
+        .map_err(|_| "--records is not a number")?;
+    let peer = api::PeerRef {
+        user_id: required(args, "--peer")?,
+        device_id: None,
+    };
+    let options = api::ChannelOptions {
+        label: "interop".into(),
+        ordered: true,
+        reliable: true,
+        timeout_ms: None,
+    };
+    let channel = session
+        .open_channel(peer.clone(), options)
+        .map_err(|e| e.to_string())?;
     let info = channel.info().map_err(|e| e.to_string())?;
     say(json!({ "channel": info }));
 
@@ -81,7 +109,9 @@ fn run_call(args: &[String]) -> Result<(), String> {
             return Err(format!("only {received} of {records} came back"));
         }
         while sent < records && sent - received < 64 {
-            channel.send(format!("record {sent:06} {}", "x".repeat(64)).as_bytes()).map_err(|e| e.to_string())?;
+            channel
+                .send(format!("record {sent:06} {}", "x".repeat(64)).as_bytes())
+                .map_err(|e| e.to_string())?;
             sent += 1;
         }
         if let Some(message) = channel.receive(50).map_err(|e| e.to_string())? {
@@ -93,13 +123,20 @@ fn run_call(args: &[String]) -> Result<(), String> {
             received += 1;
         }
         if !rekeyed && received >= records / 2 {
-            session.rotate_keys(Some(peer.clone())).map_err(|e| e.to_string())?;
+            session
+                .rotate_keys(Some(peer.clone()))
+                .map_err(|e| e.to_string())?;
             rekeyed = true;
             say(json!({ "rekeyed_at": received }));
         }
     }
     let info = channel.info().map_err(|e| e.to_string())?;
-    let export = session.export_audit(api::AuditExportRequest { from_ms: None, to_ms: None }).map_err(|e| e.to_string())?;
+    let export = session
+        .export_audit(api::AuditExportRequest {
+            from_ms: None,
+            to_ms: None,
+        })
+        .map_err(|e| e.to_string())?;
     let entries = String::from_utf8_lossy(&export.events).lines().count();
     session.close().map_err(|e| e.to_string())?;
     say(json!({
@@ -116,12 +153,17 @@ fn run_call(args: &[String]) -> Result<(), String> {
 }
 
 fn run_answer(args: &[String]) -> Result<(), String> {
-    let session = qalqon_sdk::connect(config(args)?, credentials(args)?).map_err(|e| e.to_string())?;
+    let session =
+        qalqon_sdk::connect(config(args)?, credentials(args)?).map_err(|e| e.to_string())?;
     say(json!({ "state": "connected" }));
-    let wait: u64 = value(args, "--wait-ms").map_or(Ok(60_000), |v| v.parse()).map_err(|_| "--wait-ms is not a number")?;
+    let wait: u64 = value(args, "--wait-ms")
+        .map_or(Ok(60_000), |v| v.parse())
+        .map_err(|_| "--wait-ms is not a number")?;
     let (request_id, caller) = wait_for_channel_request(&session, Duration::from_millis(wait))?;
     say(json!({ "call_from": caller }));
-    let channel = session.accept_channel(&request_id).map_err(|e| e.to_string())?;
+    let channel = session
+        .accept_channel(&request_id)
+        .map_err(|e| e.to_string())?;
     let info = channel.info().map_err(|e| e.to_string())?;
     say(json!({ "channel": info }));
     let mut echoed = 0u64;
@@ -157,7 +199,8 @@ fn run() -> Result<(), String> {
                 enrollment_token: required(&args, "--token")?,
                 device_name: value(&args, "--name").unwrap_or_else(|| "cli-rust".into()),
             };
-            let result = qalqon_sdk::enroll_device(config(&args)?, request).map_err(|e| e.to_string())?;
+            let result =
+                qalqon_sdk::enroll_device(config(&args)?, request).map_err(|e| e.to_string())?;
             say(json!({ "enrolled": result }));
             Ok(())
         }

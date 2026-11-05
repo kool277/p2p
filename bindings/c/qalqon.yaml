@@ -1,0 +1,11 @@
+name: c
+kind: binding
+language: c
+delivery: ffi
+targets: [linux-x64]
+depends_on: [core/ffi]
+toolchain: { cargo: ">=1.85", gcc: ">=9" }
+build:
+  - cargo build -q -p qalqon-ffi
+conformance: g++ -std=c++17 -Wall -Wextra -Werror -Ibindings/c/include bindings/c/tests/conformance.cpp -o target/c-conformance target/debug/libqalqon.a -lpthread -ldl -lm && target/c-conformance tests/conformance/testonly/*.json
+owners: [core-team]

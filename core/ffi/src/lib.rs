@@ -12,6 +12,7 @@
 //! is checked everywhere it could plausibly be passed by mistake.
 #![allow(clippy::missing_safety_doc)]
 
+#[rustfmt::skip]
 mod generated;
 
 pub use generated::*;
@@ -56,7 +57,9 @@ unsafe fn str_arg<'a>(value: *const c_char) -> Result<&'a str, ApiError> {
         return Err(ErrorKind::InvalidArgument.into());
     }
     // SAFETY: the caller promises a NUL-terminated string that outlives the call.
-    unsafe { CStr::from_ptr(value) }.to_str().map_err(|_| ErrorKind::InvalidArgument.into())
+    unsafe { CStr::from_ptr(value) }
+        .to_str()
+        .map_err(|_| ErrorKind::InvalidArgument.into())
 }
 
 unsafe fn bytes_arg<'a>(data: *const u8, len: usize) -> Result<&'a [u8], ApiError> {
@@ -80,7 +83,11 @@ unsafe fn optional_bytes_arg(data: *const u8, len: usize) -> Result<Option<Vec<u
 
 /// A JSON argument. Null is JSON `null`, so an optional value can simply be left out.
 unsafe fn json_arg<T: DeserializeOwned>(value: *const c_char) -> Result<T, ApiError> {
-    let text = if value.is_null() { "null" } else { unsafe { str_arg(value) }? };
+    let text = if value.is_null() {
+        "null"
+    } else {
+        unsafe { str_arg(value) }?
+    };
     serde_json::from_str(text).map_err(|_| ErrorKind::InvalidArgument.into())
 }
 
@@ -107,7 +114,10 @@ unsafe fn write_buffer(out: *mut qalqon_buffer_t, bytes: Vec<u8>) -> Result<(), 
     unsafe { write_out(out, make_buffer(bytes)) }
 }
 
-unsafe fn write_json<T: serde::Serialize>(out: *mut qalqon_buffer_t, value: &T) -> Result<(), ApiError> {
+unsafe fn write_json<T: serde::Serialize>(
+    out: *mut qalqon_buffer_t,
+    value: &T,
+) -> Result<(), ApiError> {
     let text = serde_json::to_vec(value).map_err(|_| ErrorKind::Internal)?;
     // SAFETY: passed through to `write_out`.
     unsafe { write_buffer(out, text) }
@@ -153,7 +163,10 @@ pub unsafe extern "C" fn qalqon_buffer_free(buffer: *mut qalqon_buffer_t) {
     unsafe {
         let b = &mut *buffer;
         if !b.data.is_null() {
-            drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(b.data, b.len + 1)));
+            drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+                b.data,
+                b.len + 1,
+            )));
         }
         b.data = std::ptr::null_mut();
         b.len = 0;
@@ -178,7 +191,8 @@ pub extern "C" fn qalqon_build_id() -> *const c_char {
 #[unsafe(no_mangle)]
 pub extern "C" fn qalqon_provider_name() -> *const c_char {
     static NAME: std::sync::OnceLock<std::ffi::CString> = std::sync::OnceLock::new();
-    NAME.get_or_init(|| std::ffi::CString::new(qalqon_sdk::provider_name()).unwrap_or_default()).as_ptr()
+    NAME.get_or_init(|| std::ffi::CString::new(qalqon_sdk::provider_name()).unwrap_or_default())
+        .as_ptr()
 }
 
 /// The name of a status code, such as `peerRevoked`. The string is static, and the caller
@@ -189,7 +203,12 @@ pub extern "C" fn qalqon_status_name(status: qalqon_status_t) -> *const c_char {
     let names = NAMES.get_or_init(|| {
         (0..=1000)
             .filter_map(ErrorKind::from_code)
-            .map(|k| (k.code(), std::ffi::CString::new(k.name()).unwrap_or_default()))
+            .map(|k| {
+                (
+                    k.code(),
+                    std::ffi::CString::new(k.name()).unwrap_or_default(),
+                )
+            })
             .collect()
     });
     match names.iter().find(|(code, _)| *code == status) {
@@ -212,7 +231,10 @@ pub unsafe extern "C" fn qalqon_json_get_string(
     guard(|| {
         let value: serde_json::Value = unsafe { json_arg(json) }?;
         let key = unsafe { str_arg(key) }?;
-        let text = value.get(key).and_then(|v| v.as_str()).ok_or(ErrorKind::InvalidArgument)?;
+        let text = value
+            .get(key)
+            .and_then(|v| v.as_str())
+            .ok_or(ErrorKind::InvalidArgument)?;
         unsafe { write_buffer(out, text.as_bytes().to_vec()) }
     })
 }
@@ -231,7 +253,10 @@ pub unsafe extern "C" fn qalqon_json_get_u64(
     guard(|| {
         let value: serde_json::Value = unsafe { json_arg(json) }?;
         let key = unsafe { str_arg(key) }?;
-        let number = value.get(key).and_then(|v| v.as_u64()).ok_or(ErrorKind::InvalidArgument)?;
+        let number = value
+            .get(key)
+            .and_then(|v| v.as_u64())
+            .ok_or(ErrorKind::InvalidArgument)?;
         unsafe { write_out(out, number) }
     })
 }
@@ -262,13 +287,19 @@ mod tests {
 
     #[test]
     fn null_and_bad_arguments_are_errors_not_crashes() {
-        let mut out = qalqon_buffer_t { data: std::ptr::null_mut(), len: 0 };
+        let mut out = qalqon_buffer_t {
+            data: std::ptr::null_mut(),
+            len: 0,
+        };
         assert_eq!(
             unsafe { qalqon_conformance_run(std::ptr::null(), &mut out) },
             ErrorKind::InvalidArgument.code()
         );
         let bad_utf8 = CString::new(vec![0xFFu8, 0xFE]).unwrap();
-        assert_eq!(unsafe { qalqon_conformance_run(bad_utf8.as_ptr(), &mut out) }, ErrorKind::InvalidArgument.code());
+        assert_eq!(
+            unsafe { qalqon_conformance_run(bad_utf8.as_ptr(), &mut out) },
+            ErrorKind::InvalidArgument.code()
+        );
         assert_eq!(
             unsafe { qalqon_session_close(std::ptr::null()) },
             ErrorKind::InvalidArgument.code()
@@ -279,7 +310,12 @@ mod tests {
     fn status_names_match_the_idl() {
         let name = unsafe { CStr::from_ptr(qalqon_status_name(204)) };
         assert_eq!(name.to_str().unwrap(), "peerRevoked");
-        assert_eq!(unsafe { CStr::from_ptr(qalqon_status_name(9999)) }.to_str().unwrap(), "unknown");
+        assert_eq!(
+            unsafe { CStr::from_ptr(qalqon_status_name(9999)) }
+                .to_str()
+                .unwrap(),
+            "unknown"
+        );
     }
 
     #[test]
@@ -290,13 +326,30 @@ mod tests {
             CString::new("channelId").unwrap(),
             CString::new("nope").unwrap(),
         );
-        let mut buffer = qalqon_buffer_t { data: std::ptr::null_mut(), len: 0 };
-        assert_eq!(unsafe { qalqon_json_get_string(json.as_ptr(), key_type.as_ptr(), &mut buffer) }, 0);
-        assert_eq!(unsafe { CStr::from_ptr(buffer.data.cast()) }.to_str().unwrap(), "messageAvailable");
+        let mut buffer = qalqon_buffer_t {
+            data: std::ptr::null_mut(),
+            len: 0,
+        };
+        assert_eq!(
+            unsafe { qalqon_json_get_string(json.as_ptr(), key_type.as_ptr(), &mut buffer) },
+            0
+        );
+        assert_eq!(
+            unsafe { CStr::from_ptr(buffer.data.cast()) }
+                .to_str()
+                .unwrap(),
+            "messageAvailable"
+        );
         unsafe { qalqon_buffer_free(&mut buffer) };
         let mut id = 0u64;
-        assert_eq!(unsafe { qalqon_json_get_u64(json.as_ptr(), key_id.as_ptr(), &mut id) }, 0);
+        assert_eq!(
+            unsafe { qalqon_json_get_u64(json.as_ptr(), key_id.as_ptr(), &mut id) },
+            0
+        );
         assert_eq!(id, 7);
-        assert_ne!(unsafe { qalqon_json_get_u64(json.as_ptr(), key_missing.as_ptr(), &mut id) }, 0);
+        assert_ne!(
+            unsafe { qalqon_json_get_u64(json.as_ptr(), key_missing.as_ptr(), &mut id) },
+            0
+        );
     }
 }

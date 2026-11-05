@@ -1,0 +1,23 @@
+# The release pipeline in build prompt §5 starts here. It refuses to run until the certified
+# library replaces the test-only provider, so nothing test-only can ever be published.
+name: release
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  refuse-until-the-library-arrives:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag matches VERSION
+        run: test "${GITHUB_REF_NAME#v}" = "$(cat VERSION)"
+      - name: A certified provider exists
+        run: |
+          if ! ls -d core/provider-* | grep -qv provider-testonly; then
+            echo "::error::There is no certified provider yet, so nothing can be released. See PLAN.md."
+            exit 1
+          fi

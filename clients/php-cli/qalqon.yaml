@@ -1,0 +1,8 @@
+name: php-cli
+kind: client
+language: php
+delivery: sidecar
+targets: [linux-x64]
+depends_on: [bindings/sidecar-clients, core/sidecar]
+toolchain: { php: ">=8.2" }
+owners: [core-team]

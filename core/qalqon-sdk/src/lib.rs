@@ -29,7 +29,9 @@ const IDENTITY_LABEL: &str = "device-identity";
 const DEFAULT_REVOCATION_GRACE_MS: u64 = 72 * 60 * 60 * 1000;
 
 pub(crate) fn now_ms() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64)
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as u64)
 }
 
 /// The provider this build uses.
@@ -40,7 +42,9 @@ pub fn provider() -> Arc<dyn CryptoProvider> {
     }
     #[cfg(not(feature = "testonly"))]
     {
-        compile_error!("no crypto provider is selected: provider-<lib> is not in this repository yet")
+        compile_error!(
+            "no crypto provider is selected: provider-<lib> is not in this repository yet"
+        )
     }
 }
 
@@ -58,21 +62,31 @@ pub fn provider_name() -> &'static str {
 /// Opens a key store named in a reference like `file:/path/to/keys#label`, or in a
 /// `keyStore` URI like `file:/path/to/keys`.
 pub(crate) fn open_key_store(uri: &str) -> Result<FileKeyStore, ErrorKind> {
-    let path = uri.strip_prefix("file:").ok_or(ErrorKind::InvalidArgument)?;
+    let path = uri
+        .strip_prefix("file:")
+        .ok_or(ErrorKind::InvalidArgument)?;
     FileKeyStore::open(path).map_err(|_| ErrorKind::KeyStoreUnavailable)
 }
 
 fn resolve_key_store(config: &api::SessionConfig) -> Result<FileKeyStore, ErrorKind> {
     match config.key_store.kind {
-        api::KeyStoreKind::External => {
-            open_key_store(config.key_store.uri.as_deref().ok_or(ErrorKind::InvalidArgument)?)
-        }
+        api::KeyStoreKind::External => open_key_store(
+            config
+                .key_store
+                .uri
+                .as_deref()
+                .ok_or(ErrorKind::InvalidArgument)?,
+        ),
         // The platform stores in ADR-0002, part 6, are not built yet, so the default on
         // this platform is the file store in the data directory. docs/COMPLIANCE.md
         // records this as a gap.
         api::KeyStoreKind::OsDefault => {
-            let dir = config.data_dir.as_deref().ok_or(ErrorKind::InvalidArgument)?;
-            FileKeyStore::open(Path::new(dir).join("keys")).map_err(|_| ErrorKind::KeyStoreUnavailable)
+            let dir = config
+                .data_dir
+                .as_deref()
+                .ok_or(ErrorKind::InvalidArgument)?;
+            FileKeyStore::open(Path::new(dir).join("keys"))
+                .map_err(|_| ErrorKind::KeyStoreUnavailable)
         }
     }
 }
@@ -90,7 +104,12 @@ fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     use std::io::Write;
     use std::os::unix::fs::OpenOptionsExt;
     let temporary = path.with_extension("tmp");
-    let mut file = std::fs::OpenOptions::new().write(true).create(true).truncate(true).mode(0o600).open(&temporary)?;
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(&temporary)?;
     file.write_all(bytes)?;
     file.sync_all()?;
     std::fs::rename(temporary, path)
@@ -142,8 +161,13 @@ impl Shared {
     }
 
     fn persist(&self, core: &mut ClientCore) {
-        let Some(saved) = core.take_state_to_save() else { return };
-        if let (Some(path), Ok(bytes)) = (data_file(&self.data_dir, "state.json"), serde_json::to_vec(&saved)) {
+        let Some(saved) = core.take_state_to_save() else {
+            return;
+        };
+        if let (Some(path), Ok(bytes)) = (
+            data_file(&self.data_dir, "state.json"),
+            serde_json::to_vec(&saved),
+        ) {
             // A local store that cannot be written is reported by exportAudit later,
             // and must not take down a live session.
             let _ = write_private(&path, &bytes);
@@ -159,14 +183,21 @@ fn run_runtime(shared: Arc<Shared>) {
             let now = now_ms();
             core.handle_timeout(now);
             let mut commands = Vec::new();
-            let external = shared.external.lock().unwrap_or_else(|e| e.into_inner()).is_some();
+            let external = shared
+                .external
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .is_some();
             if !external {
                 while let Some(command) = core.poll_command() {
                     commands.push(command);
                 }
             }
             shared.persist(&mut core);
-            let wait = core.next_timeout().map_or(1000, |t| t.saturating_sub(now)).clamp(1, 1000);
+            let wait = core
+                .next_timeout()
+                .map_or(1000, |t| t.saturating_sub(now))
+                .clamp(1, 1000);
             (commands, wait, core.is_closed())
         };
         for command in commands {
@@ -195,7 +226,11 @@ fn run_runtime(shared: Arc<Shared>) {
 }
 
 fn external_mode(shared: &Shared) -> bool {
-    shared.external.lock().unwrap_or_else(|e| e.into_inner()).is_some()
+    shared
+        .external
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .is_some()
 }
 
 struct Prepared {
@@ -226,16 +261,29 @@ fn prepare(config: &api::SessionConfig, require_chain: bool) -> Result<Prepared,
             ca_bundle: config.ca_bundle.clone(),
             identity,
             chain,
-            relay_policy: config.relay_policy.unwrap_or(api::RelayPolicy::PreferDirect),
-            identity_change_policy: config.identity_change_policy.unwrap_or(api::IdentityChangePolicy::Block),
-            revocation_grace_ms: config.revocation_grace_ms.unwrap_or(DEFAULT_REVOCATION_GRACE_MS),
+            relay_policy: config
+                .relay_policy
+                .unwrap_or(api::RelayPolicy::PreferDirect),
+            identity_change_policy: config
+                .identity_change_policy
+                .unwrap_or(api::IdentityChangePolicy::Block),
+            revocation_grace_ms: config
+                .revocation_grace_ms
+                .unwrap_or(DEFAULT_REVOCATION_GRACE_MS),
             saved: read_saved(&data_dir),
             limits: Limits::default(),
         },
         now_ms(),
     )?;
     let external = match &config.external_transport {
-        Some(id) => Some(external_registry().lock().unwrap_or_else(|e| e.into_inner()).get(id).cloned().ok_or(ErrorKind::InvalidArgument)?),
+        Some(id) => Some(
+            external_registry()
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .get(id)
+                .cloned()
+                .ok_or(ErrorKind::InvalidArgument)?,
+        ),
         None => None,
     };
     let shared = Arc::new(Shared {
@@ -258,7 +306,10 @@ fn prepare(config: &api::SessionConfig, require_chain: bool) -> Result<Prepared,
 }
 
 /// `enrollDevice`.
-pub fn enroll_device(config: api::SessionConfig, request: api::EnrollmentRequest) -> Result<api::EnrollmentResult, ApiError> {
+pub fn enroll_device(
+    config: api::SessionConfig,
+    request: api::EnrollmentRequest,
+) -> Result<api::EnrollmentResult, ApiError> {
     let prepared = prepare(&config, false)?;
     let shared = &prepared.shared;
     let op = shared.lock().start_enroll(now_ms(), request);
@@ -270,7 +321,8 @@ pub fn enroll_device(config: api::SessionConfig, request: api::EnrollmentRequest
     match outcome? {
         OpValue::Enrolled { result, chain } => {
             if let Some(path) = data_file(&prepared.data_dir, "device.chain") {
-                write_private(&path, to_hex(&chain).as_bytes()).map_err(|_| ErrorKind::KeyStoreUnavailable)?;
+                write_private(&path, to_hex(&chain).as_bytes())
+                    .map_err(|_| ErrorKind::KeyStoreUnavailable)?;
             }
             Ok(result)
         }
@@ -279,7 +331,10 @@ pub fn enroll_device(config: api::SessionConfig, request: api::EnrollmentRequest
 }
 
 /// `connect`.
-pub fn connect(config: api::SessionConfig, credentials: api::Credentials) -> Result<Session, ApiError> {
+pub fn connect(
+    config: api::SessionConfig,
+    credentials: api::Credentials,
+) -> Result<Session, ApiError> {
     let prepared = prepare(&config, true)?;
     let shared = prepared.shared;
     let op = shared.lock().start_connect(now_ms(), credentials);
@@ -287,7 +342,9 @@ pub fn connect(config: api::SessionConfig, credentials: api::Credentials) -> Res
     match shared.wait_op(op, DEFAULT_OP_TIMEOUT) {
         Ok(_) => Ok(Session { shared }),
         Err(code) => {
-            shared.stopped.store(true, std::sync::atomic::Ordering::SeqCst);
+            shared
+                .stopped
+                .store(true, std::sync::atomic::Ordering::SeqCst);
             shared.poke();
             Err(code.into())
         }
@@ -321,13 +378,20 @@ impl Session {
     fn channel_from(&self, op: u64, timeout: Duration) -> Result<Channel, ApiError> {
         self.shared.poke();
         match self.shared.wait_op(op, timeout)? {
-            OpValue::Channel(id) => Ok(Channel { id, shared: self.shared.clone() }),
+            OpValue::Channel(id) => Ok(Channel {
+                id,
+                shared: self.shared.clone(),
+            }),
             _ => Err(ErrorKind::Internal.into()),
         }
     }
 
     /// `session.openChannel`.
-    pub fn open_channel(&self, peer: api::PeerRef, options: api::ChannelOptions) -> Result<Channel, ApiError> {
+    pub fn open_channel(
+        &self,
+        peer: api::PeerRef,
+        options: api::ChannelOptions,
+    ) -> Result<Channel, ApiError> {
         let timeout = Duration::from_millis(u64::from(options.timeout_ms.unwrap_or(30_000)) + 1000);
         let op = self.shared.lock().open_channel(now_ms(), peer, options);
         self.channel_from(op, timeout)
@@ -347,8 +411,15 @@ impl Session {
     }
 
     /// `session.verifyPeer`.
-    pub fn verify_peer(&self, peer: api::PeerRef, safety_number: Option<String>) -> Result<api::PeerIdentity, ApiError> {
-        let result = self.shared.lock().verify_peer(now_ms(), &peer, safety_number.as_deref())?;
+    pub fn verify_peer(
+        &self,
+        peer: api::PeerRef,
+        safety_number: Option<String>,
+    ) -> Result<api::PeerIdentity, ApiError> {
+        let result = self
+            .shared
+            .lock()
+            .verify_peer(now_ms(), &peer, safety_number.as_deref())?;
         self.shared.poke();
         Ok(result)
     }
@@ -362,7 +433,10 @@ impl Session {
     }
 
     /// `session.exportAudit`.
-    pub fn export_audit(&self, request: api::AuditExportRequest) -> Result<api::AuditExport, ApiError> {
+    pub fn export_audit(
+        &self,
+        request: api::AuditExportRequest,
+    ) -> Result<api::AuditExport, ApiError> {
         Ok(self.shared.lock().export_audit(&request)?)
     }
 
@@ -480,9 +554,17 @@ fn external_registry() -> &'static Mutex<HashMap<String, Arc<ExternalInner>>> {
 /// `createExternalTransport`.
 pub fn create_external_transport() -> Result<ExternalTransport, ApiError> {
     let mut random = [0u8; 16];
-    provider().random(&mut random).map_err(|_| ErrorKind::Internal)?;
-    let inner = Arc::new(ExternalInner { id: to_hex(&random), shared: Mutex::new(None) });
-    external_registry().lock().unwrap_or_else(|e| e.into_inner()).insert(inner.id.clone(), inner.clone());
+    provider()
+        .random(&mut random)
+        .map_err(|_| ErrorKind::Internal)?;
+    let inner = Arc::new(ExternalInner {
+        id: to_hex(&random),
+        shared: Mutex::new(None),
+    });
+    external_registry()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .insert(inner.id.clone(), inner.clone());
     Ok(ExternalTransport { inner })
 }
 
@@ -500,7 +582,11 @@ impl std::fmt::Debug for ExternalTransport {
 
 impl ExternalTransport {
     fn shared(&self) -> Option<Arc<Shared>> {
-        self.inner.shared.lock().unwrap_or_else(|e| e.into_inner()).clone()
+        self.inner
+            .shared
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     fn with_core<T>(&self, f: impl FnOnce(&mut ClientCore) -> T) -> Result<T, ApiError> {
@@ -530,7 +616,10 @@ impl ExternalTransport {
                     return Ok(None);
                 }
                 let wait = (deadline - now).min(Duration::from_millis(50));
-                let _ = shared.activity.wait_timeout(core, wait).unwrap_or_else(|e| e.into_inner());
+                let _ = shared
+                    .activity
+                    .wait_timeout(core, wait)
+                    .unwrap_or_else(|e| e.into_inner());
             } else {
                 let now = Instant::now();
                 if now >= deadline {

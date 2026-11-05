@@ -21,14 +21,17 @@ use qalqon_api::{ErrorKind, TransportCommand};
 use qalqon_audit::{AuditChain, AuditEntry, AuditEvent, operation as audit_op, to_jsonl};
 use qalqon_core::cert::{self, Certificate};
 use qalqon_core::control::{
-    ControlMessage, RelayGrant, encode_channel_options, field, kind, parse_channel_options, parse_grants,
+    ControlMessage, RelayGrant, encode_channel_options, field, kind, parse_channel_options,
+    parse_grants,
 };
 use qalqon_core::crl::Crl;
 use qalqon_core::pins::safety_number;
 use qalqon_core::relay;
 use qalqon_core::session::{Limits, Plane, Role, SessionConfig, TransportCaps};
 use qalqon_core::wire::reason;
-use qalqon_core::{ChannelOptions, ErrorCode, Event, PeerExpectation, PeerInfo, PinStatus, Session};
+use qalqon_core::{
+    ChannelOptions, ErrorCode, Event, PeerExpectation, PeerInfo, PinStatus, Session,
+};
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 use trust::{DataPlaneVerifier, UncheckedControlVerifier};
@@ -70,7 +73,9 @@ pub struct ClientOptions {
 
 impl std::fmt::Debug for ClientOptions {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ClientOptions").field("server_url", &self.server_url).finish_non_exhaustive()
+        f.debug_struct("ClientOptions")
+            .field("server_url", &self.server_url)
+            .finish_non_exhaustive()
     }
 }
 
@@ -130,15 +135,28 @@ enum ControlStage {
 }
 
 enum Goal {
-    Login { op: u64, user_id: String, secret: Zeroizing<Vec<u8>>, mfa_code: Option<String> },
-    Enroll { op: u64, token: String, device_name: String },
+    Login {
+        op: u64,
+        user_id: String,
+        secret: Zeroizing<Vec<u8>>,
+        mfa_code: Option<String>,
+    },
+    Enroll {
+        op: u64,
+        token: String,
+        device_name: String,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum LinkPurpose {
     Control,
     Direct(u64),
-    Relay { peer: u64, joined: bool, paired: bool },
+    Relay {
+        peer: u64,
+        joined: bool,
+        paired: bool,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -237,7 +255,9 @@ pub struct ClientCore {
 
 impl std::fmt::Debug for ClientCore {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ClientCore").field("server_url", &self.server_url).finish_non_exhaustive()
+        f.debug_struct("ClientCore")
+            .field("server_url", &self.server_url)
+            .finish_non_exhaustive()
     }
 }
 
@@ -247,19 +267,26 @@ impl ClientCore {
         let p = options.provider.as_ref();
         p.self_test().map_err(|_| ErrorKind::SelfTestFailed)?;
         let server_host = parse_server_host(&options.server_url)?;
-        let roots = cert::parse_many(p, &options.ca_bundle).map_err(|_| ErrorKind::InvalidArgument)?;
+        let roots =
+            cert::parse_many(p, &options.ca_bundle).map_err(|_| ErrorKind::InvalidArgument)?;
         if roots.is_empty() {
             return Err(ErrorKind::InvalidArgument);
         }
-        let encoded = cert::encode_public_key(options.identity.public_key()).map_err(|_| ErrorKind::Internal)?;
+        let encoded = cert::encode_public_key(options.identity.public_key())
+            .map_err(|_| ErrorKind::Internal)?;
         let my_fingerprint = cert::fingerprint(p, &encoded);
 
         let (enrolled, chain) = match options.chain {
             Some(chain) => (true, chain),
             None => {
                 let day = 24 * 60 * 60 * 1000;
-                let chain = cert::pre_enrolment(p, options.identity.as_ref(), now_ms.saturating_sub(day), now_ms + day)
-                    .map_err(|_| ErrorKind::Internal)?;
+                let chain = cert::pre_enrolment(
+                    p,
+                    options.identity.as_ref(),
+                    now_ms.saturating_sub(day),
+                    now_ms + day,
+                )
+                .map_err(|_| ErrorKind::Internal)?;
                 (false, chain)
             }
         };
@@ -272,7 +299,11 @@ impl ClientCore {
             ),
             None => AuditChain::new(p, &my_fingerprint),
         };
-        let trust = Trust::from_saved(&options.saved, options.identity_change_policy, options.revocation_grace_ms);
+        let trust = Trust::from_saved(
+            &options.saved,
+            options.identity_change_policy,
+            options.revocation_grace_ms,
+        );
 
         Ok(ClientCore {
             provider: options.provider,
@@ -365,7 +396,15 @@ impl ClientCore {
         Some(trust.to_saved(self.audit_entries.clone()))
     }
 
-    fn audit_event(&mut self, now_ms: u64, subject: &str, object: &str, operation: &str, result: &str, detail: &str) {
+    fn audit_event(
+        &mut self,
+        now_ms: u64,
+        subject: &str,
+        object: &str,
+        operation: &str,
+        result: &str,
+        detail: &str,
+    ) {
         let entry = self.audit.append(
             self.provider.as_ref(),
             AuditEvent {
@@ -395,7 +434,11 @@ impl ClientCore {
             self.complete(op, Err(ErrorKind::InvalidState));
             return op;
         }
-        self.goal = Some(Goal::Enroll { op, token: request.enrollment_token, device_name: request.device_name });
+        self.goal = Some(Goal::Enroll {
+            op,
+            token: request.enrollment_token,
+            device_name: request.device_name,
+        });
         self.open_control(now_ms);
         op
     }
@@ -448,7 +491,12 @@ impl ClientCore {
     }
 
     /// Starts `openChannel`.
-    pub fn open_channel(&mut self, now_ms: u64, peer: api::PeerRef, options: api::ChannelOptions) -> u64 {
+    pub fn open_channel(
+        &mut self,
+        now_ms: u64,
+        peer: api::PeerRef,
+        options: api::ChannelOptions,
+    ) -> u64 {
         let op = self.new_op();
         if !self.is_ready() {
             self.complete(op, Err(ErrorKind::Closed));
@@ -458,7 +506,10 @@ impl ClientCore {
             self.complete(op, Err(ErrorKind::InvalidArgument));
             return op;
         }
-        let deadline = now_ms + options.timeout_ms.map_or(DEFAULT_CHANNEL_TIMEOUT_MS, u64::from);
+        let deadline = now_ms
+            + options
+                .timeout_ms
+                .map_or(DEFAULT_CHANNEL_TIMEOUT_MS, u64::from);
         let handle = self.new_channel(0, options.clone());
 
         // A second channel to a connected peer multiplexes over its session.
@@ -468,7 +519,10 @@ impl ClientCore {
             .find(|p| {
                 p.stage == PeerStage::Established
                     && p.user_id == peer.user_id
-                    && peer.device_id.as_ref().is_none_or(|d| p.device_id.as_ref() == Some(d))
+                    && peer
+                        .device_id
+                        .as_ref()
+                        .is_none_or(|d| p.device_id.as_ref() == Some(d))
             })
             .map(|p| p.id);
         if let Some(peer_id) = existing {
@@ -490,7 +544,9 @@ impl ClientCore {
         if let Some(entry) = self.channels.get_mut(&handle) {
             entry.peer = peer_id;
         }
-        let Ok(option_bytes) = encode_channel_options(options.ordered, options.reliable, &options.label) else {
+        let Ok(option_bytes) =
+            encode_channel_options(options.ordered, options.reliable, &options.label)
+        else {
             self.complete(op, Err(ErrorKind::InvalidArgument));
             return op;
         };
@@ -518,7 +574,11 @@ impl ClientCore {
                 direct_deadline: None,
                 buffered_signals: Vec::new(),
                 session: None,
-                waiting: vec![Waiting::Open { op, handle, deadline }],
+                waiting: vec![Waiting::Open {
+                    op,
+                    handle,
+                    deadline,
+                }],
                 options,
                 hint_chain: Vec::new(),
                 peer_info: None,
@@ -536,26 +596,46 @@ impl ClientCore {
         self.next_channel += 1;
         self.channels.insert(
             handle,
-            ChannelEntry { peer, wire_id: None, inbox: VecDeque::new(), open: false, options, close_op: None },
+            ChannelEntry {
+                peer,
+                wire_id: None,
+                inbox: VecDeque::new(),
+                open: false,
+                options,
+                close_op: None,
+            },
         );
         handle
     }
 
     fn open_on_session(&mut self, now_ms: u64, peer_id: u64, op: u64, handle: u64, deadline: u64) {
-        let Some(options) = self.channels.get(&handle).map(|c| c.options.clone()) else { return };
-        let Some(session) = self.peers.get_mut(&peer_id).and_then(|p| p.session.as_mut()) else {
+        let Some(options) = self.channels.get(&handle).map(|c| c.options.clone()) else {
+            return;
+        };
+        let Some(session) = self
+            .peers
+            .get_mut(&peer_id)
+            .and_then(|p| p.session.as_mut())
+        else {
             self.complete(op, Err(ErrorKind::Closed));
             return;
         };
-        let wire_options =
-            ChannelOptions { ordered: options.ordered, reliable: options.reliable, label: options.label.clone() };
+        let wire_options = ChannelOptions {
+            ordered: options.ordered,
+            reliable: options.reliable,
+            label: options.label.clone(),
+        };
         match session.open_channel(now_ms, wire_options) {
             Ok(wire_id) => {
                 if let Some(entry) = self.channels.get_mut(&handle) {
                     entry.wire_id = Some(wire_id);
                 }
                 if let Some(peer) = self.peers.get_mut(&peer_id) {
-                    peer.waiting.push(Waiting::Open { op, handle, deadline });
+                    peer.waiting.push(Waiting::Open {
+                        op,
+                        handle,
+                        deadline,
+                    });
                 }
             }
             Err(code) => {
@@ -575,7 +655,9 @@ impl ClientCore {
                 .peers
                 .get_mut(&peer_id)
                 .and_then(|p| p.session.as_mut())
-                .map_or(Err(ErrorCode::Closed), |s| s.accept_channel(now_ms, wire_id));
+                .map_or(Err(ErrorCode::Closed), |s| {
+                    s.accept_channel(now_ms, wire_id)
+                });
             match accepted {
                 Ok(()) => {
                     if let Some(entry) = self.channels.get_mut(&handle) {
@@ -583,7 +665,8 @@ impl ClientCore {
                         entry.open = true;
                     }
                     self.complete(op, Ok(OpValue::Channel(handle)));
-                    self.events.push_back(api::Event::ChannelOpened { channel_id: handle });
+                    self.events
+                        .push_back(api::Event::ChannelOpened { channel_id: handle });
                 }
                 Err(code) => {
                     self.channels.remove(&handle);
@@ -605,14 +688,25 @@ impl ClientCore {
         };
         let (request, options, deadline) = {
             let peer = &self.peers[&peer_id];
-            (peer.request_id, peer.options.clone(), now_ms + DEFAULT_CHANNEL_TIMEOUT_MS)
+            (
+                peer.request_id,
+                peer.options.clone(),
+                now_ms + DEFAULT_CHANNEL_TIMEOUT_MS,
+            )
         };
         let handle = self.new_channel(peer_id, options);
         if let Some(peer) = self.peers.get_mut(&peer_id) {
-            peer.waiting.push(Waiting::Accept { op, handle, deadline });
+            peer.waiting.push(Waiting::Accept {
+                op,
+                handle,
+                deadline,
+            });
             peer.stage = PeerStage::Connecting;
         }
-        self.send_control(now_ms, &ControlMessage::new(kind::RENDEZVOUS_ACCEPT).with(field::REQUEST_ID, &request));
+        self.send_control(
+            now_ms,
+            &ControlMessage::new(kind::RENDEZVOUS_ACCEPT).with(field::REQUEST_ID, &request),
+        );
         self.start_paths(now_ms, peer_id);
         self.drive(now_ms);
         op
@@ -621,8 +715,14 @@ impl ClientCore {
     /// `rejectChannel`.
     pub fn reject_channel(&mut self, now_ms: u64, request_id: &str) -> Result<(), ErrorKind> {
         if let Some((peer_id, wire_id, _)) = self.session_requests.remove(request_id) {
-            let session = self.peers.get_mut(&peer_id).and_then(|p| p.session.as_mut()).ok_or(ErrorKind::Closed)?;
-            session.reject_channel(now_ms, wire_id, reason::REJECTED).map_err(kind_of)?;
+            let session = self
+                .peers
+                .get_mut(&peer_id)
+                .and_then(|p| p.session.as_mut())
+                .ok_or(ErrorKind::Closed)?;
+            session
+                .reject_channel(now_ms, wire_id, reason::REJECTED)
+                .map_err(kind_of)?;
             self.drive(now_ms);
             return Ok(());
         }
@@ -633,20 +733,30 @@ impl ClientCore {
             .map(|p| (p.id, p.request_id));
         let (peer_id, request) = found.ok_or(ErrorKind::InvalidArgument)?;
         self.peers.remove(&peer_id);
-        self.send_control(now_ms, &ControlMessage::new(kind::RENDEZVOUS_REJECT).with(field::REQUEST_ID, &request));
+        self.send_control(
+            now_ms,
+            &ControlMessage::new(kind::RENDEZVOUS_REJECT).with(field::REQUEST_ID, &request),
+        );
         self.drive(now_ms);
         Ok(())
     }
 
     /// `channel.send`.
     pub fn send(&mut self, now_ms: u64, channel_id: u64, payload: &[u8]) -> Result<(), ErrorKind> {
-        let entry = self.channels.get(&channel_id).ok_or(ErrorKind::InvalidArgument)?;
+        let entry = self
+            .channels
+            .get(&channel_id)
+            .ok_or(ErrorKind::InvalidArgument)?;
         if !entry.open {
             return Err(ErrorKind::Closed);
         }
         let wire_id = entry.wire_id.ok_or(ErrorKind::InvalidState)?;
         let peer_id = entry.peer;
-        let session = self.peers.get_mut(&peer_id).and_then(|p| p.session.as_mut()).ok_or(ErrorKind::Closed)?;
+        let session = self
+            .peers
+            .get_mut(&peer_id)
+            .and_then(|p| p.session.as_mut())
+            .ok_or(ErrorKind::Closed)?;
         session.send(now_ms, wire_id, payload).map_err(kind_of)?;
         self.drive(now_ms);
         Ok(())
@@ -654,7 +764,10 @@ impl ClientCore {
 
     /// `channel.receive`, without waiting. `Ok(None)` means nothing is ready yet.
     pub fn receive(&mut self, channel_id: u64) -> Result<Option<Vec<u8>>, ErrorKind> {
-        let entry = self.channels.get_mut(&channel_id).ok_or(ErrorKind::InvalidArgument)?;
+        let entry = self
+            .channels
+            .get_mut(&channel_id)
+            .ok_or(ErrorKind::InvalidArgument)?;
         match entry.inbox.pop_front() {
             Some(message) => Ok(Some(message)),
             None if !entry.open => Err(ErrorKind::Closed),
@@ -664,13 +777,20 @@ impl ClientCore {
 
     /// `channel.info`.
     pub fn channel_info(&self, channel_id: u64) -> Result<api::ChannelInfo, ErrorKind> {
-        let entry = self.channels.get(&channel_id).ok_or(ErrorKind::InvalidArgument)?;
+        let entry = self
+            .channels
+            .get(&channel_id)
+            .ok_or(ErrorKind::InvalidArgument)?;
         let peer = self.peers.get(&entry.peer).ok_or(ErrorKind::Closed)?;
         Ok(api::ChannelInfo {
             channel_id,
             peer: self.identity_of(peer)?,
             path: peer.path.unwrap_or(api::PathKind::Direct),
-            key_epoch: peer.session.as_ref().and_then(Session::send_epoch).unwrap_or(0),
+            key_epoch: peer
+                .session
+                .as_ref()
+                .and_then(Session::send_epoch)
+                .unwrap_or(0),
         })
     }
 
@@ -680,9 +800,14 @@ impl ClientCore {
         // showing who is calling, before any handshake has run.
         let (device, fingerprint) = match peer.peer_info.as_ref() {
             Some(info) => (info.subject_b.clone(), info.fingerprint.clone()),
-            None => trust.known_device(&peer.user_id, peer.device_id.as_deref()).unwrap_or_else(|| {
-                (peer.device_id.clone().unwrap_or_default(), self.hint_fingerprint(peer))
-            }),
+            None => trust
+                .known_device(&peer.user_id, peer.device_id.as_deref())
+                .unwrap_or_else(|| {
+                    (
+                        peer.device_id.clone().unwrap_or_default(),
+                        self.hint_fingerprint(peer),
+                    )
+                }),
         };
         let safety = if fingerprint.is_empty() {
             String::new()
@@ -731,7 +856,9 @@ impl ClientCore {
             .peers
             .get_mut(&peer_id)
             .and_then(|p| p.session.as_mut())
-            .map_or(Err(ErrorCode::Closed), |s| s.close_channel(now_ms, wire_id, reason::NORMAL));
+            .map_or(Err(ErrorCode::Closed), |s| {
+                s.close_channel(now_ms, wire_id, reason::NORMAL)
+            });
         if closed.is_err() {
             if let Some(entry) = self.channels.get_mut(&channel_id) {
                 entry.open = false;
@@ -757,7 +884,8 @@ impl ClientCore {
             .find(|p| {
                 p.user_id == peer.user_id
                     && peer.device_id.as_ref().is_none_or(|d| {
-                        p.peer_info.as_ref().map(|i| &i.subject_b) == Some(d) || p.device_id.as_ref() == Some(d)
+                        p.peer_info.as_ref().map(|i| &i.subject_b) == Some(d)
+                            || p.device_id.as_ref() == Some(d)
                     })
             })
             .map(|p| self.identity_of(p))
@@ -766,10 +894,12 @@ impl ClientCore {
             Some(identity) => identity,
             None => {
                 let trust = self.trust.lock().unwrap_or_else(|e| e.into_inner());
-                let (device, fingerprint) =
-                    trust.known_device(&peer.user_id, peer.device_id.as_deref()).ok_or(ErrorKind::PeerUnavailable)?;
-                let number = safety_number(self.provider.as_ref(), &self.my_fingerprint, &fingerprint)
-                    .map_err(|_| ErrorKind::Internal)?;
+                let (device, fingerprint) = trust
+                    .known_device(&peer.user_id, peer.device_id.as_deref())
+                    .ok_or(ErrorKind::PeerUnavailable)?;
+                let number =
+                    safety_number(self.provider.as_ref(), &self.my_fingerprint, &fingerprint)
+                        .map_err(|_| ErrorKind::Internal)?;
                 let status = trust.status_of(&peer.user_id, &device, &fingerprint);
                 api::PeerIdentity {
                     user_id: peer.user_id.clone(),
@@ -786,14 +916,24 @@ impl ClientCore {
             {
                 return Err(ErrorKind::InvalidArgument);
             }
-            let fingerprint = crypto_provider::from_hex(&identity.fingerprint).ok_or(ErrorKind::Internal)?;
+            let fingerprint =
+                crypto_provider::from_hex(&identity.fingerprint).ok_or(ErrorKind::Internal)?;
             let mut trust = self.trust.lock().unwrap_or_else(|e| e.into_inner());
-            trust.pins.record_verified(&identity.user_id, &identity.device_id, &fingerprint);
+            trust
+                .pins
+                .record_verified(&identity.user_id, &identity.device_id, &fingerprint);
             drop(trust);
             identity.status = api::VerificationStatus::Verified;
             self.dirty = true;
             let (user, device) = (identity.user_id.clone(), identity.device_id.clone());
-            self.audit_event(now_ms, "local user", &format!("{user}/{device}"), audit_op::PIN_CHANGED, "ok", "verified out of band");
+            self.audit_event(
+                now_ms,
+                "local user",
+                &format!("{user}/{device}"),
+                audit_op::PIN_CHANGED,
+                "ok",
+                "verified out of band",
+            );
         }
         Ok(identity)
     }
@@ -807,20 +947,31 @@ impl ClientCore {
             .filter(|p| p.stage == PeerStage::Established)
             .filter(|p| {
                 peer.is_none_or(|r| {
-                    p.user_id == r.user_id && r.device_id.as_ref().is_none_or(|d| p.device_id.as_ref() == Some(d))
+                    p.user_id == r.user_id
+                        && r.device_id
+                            .as_ref()
+                            .is_none_or(|d| p.device_id.as_ref() == Some(d))
                 })
             })
             .map(|p| p.id)
             .collect();
         if targets.is_empty() {
-            let result = if peer.is_some() { Err(ErrorKind::InvalidState) } else { Ok(OpValue::None) };
+            let result = if peer.is_some() {
+                Err(ErrorKind::InvalidState)
+            } else {
+                Ok(OpValue::None)
+            };
             self.complete(op, result);
             return op;
         }
         // The operation completes when the last peer has moved.
         for peer_id in &targets {
             if let Some(entry) = self.peers.get_mut(peer_id) {
-                if entry.session.as_mut().is_some_and(|s| s.rotate_keys(now_ms).is_ok()) {
+                if entry
+                    .session
+                    .as_mut()
+                    .is_some_and(|s| s.rotate_keys(now_ms).is_ok())
+                {
                     entry.rotate_ops.push(op);
                 }
             }
@@ -830,7 +981,10 @@ impl ClientCore {
     }
 
     /// `exportAudit`.
-    pub fn export_audit(&self, request: &api::AuditExportRequest) -> Result<api::AuditExport, ErrorKind> {
+    pub fn export_audit(
+        &self,
+        request: &api::AuditExportRequest,
+    ) -> Result<api::AuditExport, ErrorKind> {
         let selected: Vec<AuditEntry> = self
             .audit_entries
             .iter()
@@ -839,11 +993,15 @@ impl ClientCore {
             .cloned()
             .collect();
         let events = to_jsonl(&selected).map_err(|_| ErrorKind::Internal)?;
-        let checkpoint = self.audit.checkpoint(self.identity.as_ref()).map_err(|_| ErrorKind::AuditUnavailable)?;
+        let checkpoint = self
+            .audit
+            .checkpoint(self.identity.as_ref())
+            .map_err(|_| ErrorKind::AuditUnavailable)?;
         Ok(api::AuditExport {
             events: events.into_bytes(),
             chain_head: self.audit.head().to_vec(),
-            checkpoint_signature: crypto_provider::from_hex(&checkpoint.signature).ok_or(ErrorKind::Internal)?,
+            checkpoint_signature: crypto_provider::from_hex(&checkpoint.signature)
+                .ok_or(ErrorKind::Internal)?,
         })
     }
 
@@ -875,7 +1033,11 @@ impl ClientCore {
 
     /// `linkOpened`.
     pub fn link_opened(&mut self, now_ms: u64, link_id: u64, caps: api::TransportCaps) {
-        let caps = TransportCaps { ordered: caps.ordered, reliable: caps.reliable, max_frame_len: caps.max_frame_len as usize };
+        let caps = TransportCaps {
+            ordered: caps.ordered,
+            reliable: caps.reliable,
+            max_frame_len: caps.max_frame_len as usize,
+        };
         match self.links.get(&link_id).copied() {
             Some(LinkPurpose::Control) => self.control_link_opened(now_ms, caps),
             Some(LinkPurpose::Direct(peer_id)) => {
@@ -886,11 +1048,27 @@ impl ClientCore {
                 self.start_peer_session(now_ms, peer_id, caps);
             }
             Some(LinkPurpose::Relay { peer, .. }) => {
-                let Some(entry) = self.peers.get(&peer) else { return };
-                let (Some(id), Some(grant)) = (entry.rendezvous_id, entry.grants.first()) else { return };
-                let Ok(join) = relay::encode_join(&id, &grant.token) else { return };
-                self.commands.push_back(TransportCommand::SendFrame { link_id, frame: join });
-                self.links.insert(link_id, LinkPurpose::Relay { peer, joined: true, paired: false });
+                let Some(entry) = self.peers.get(&peer) else {
+                    return;
+                };
+                let (Some(id), Some(grant)) = (entry.rendezvous_id, entry.grants.first()) else {
+                    return;
+                };
+                let Ok(join) = relay::encode_join(&id, &grant.token) else {
+                    return;
+                };
+                self.commands.push_back(TransportCommand::SendFrame {
+                    link_id,
+                    frame: join,
+                });
+                self.links.insert(
+                    link_id,
+                    LinkPurpose::Relay {
+                        peer,
+                        joined: true,
+                        paired: false,
+                    },
+                );
                 // The caps are remembered in the entry for when the relay says it is paired.
                 self.relay_caps.insert(link_id, caps);
             }
@@ -901,7 +1079,9 @@ impl ClientCore {
 
     /// `linkClosed`.
     pub fn link_closed(&mut self, now_ms: u64, link_id: u64) {
-        let Some(purpose) = self.links.remove(&link_id) else { return };
+        let Some(purpose) = self.links.remove(&link_id) else {
+            return;
+        };
         match purpose {
             LinkPurpose::Control => {
                 if let Some(control) = self.control.as_mut() {
@@ -912,9 +1092,16 @@ impl ClientCore {
             }
             LinkPurpose::Direct(peer_id) | LinkPurpose::Relay { peer: peer_id, .. } => {
                 let is_direct = matches!(purpose, LinkPurpose::Direct(_));
-                let session_running = self.peers.get(&peer_id).is_some_and(|p| p.session.is_some());
+                let session_running = self
+                    .peers
+                    .get(&peer_id)
+                    .is_some_and(|p| p.session.is_some());
                 if session_running {
-                    if let Some(session) = self.peers.get_mut(&peer_id).and_then(|p| p.session.as_mut()) {
+                    if let Some(session) = self
+                        .peers
+                        .get_mut(&peer_id)
+                        .and_then(|p| p.session.as_mut())
+                    {
                         session.on_transport_closed(now_ms);
                     }
                 } else if is_direct {
@@ -936,14 +1123,32 @@ impl ClientCore {
                 }
             }
             Some(LinkPurpose::Direct(peer_id)) => {
-                if let Some(session) = self.peers.get_mut(&peer_id).and_then(|p| p.session.as_mut()) {
+                if let Some(session) = self
+                    .peers
+                    .get_mut(&peer_id)
+                    .and_then(|p| p.session.as_mut())
+                {
                     session.handle_frame(now_ms, frame);
                 }
             }
-            Some(LinkPurpose::Relay { peer, joined, paired: false }) => {
+            Some(LinkPurpose::Relay {
+                peer,
+                joined,
+                paired: false,
+            }) => {
                 if frame == RELAY_PAIRED {
-                    self.links.insert(link_id, LinkPurpose::Relay { peer, joined, paired: true });
-                    let caps = self.relay_caps.remove(&link_id).unwrap_or(TransportCaps::STREAM);
+                    self.links.insert(
+                        link_id,
+                        LinkPurpose::Relay {
+                            peer,
+                            joined,
+                            paired: true,
+                        },
+                    );
+                    let caps = self
+                        .relay_caps
+                        .remove(&link_id)
+                        .unwrap_or(TransportCaps::STREAM);
                     self.start_peer_session(now_ms, peer, caps);
                 }
             }
@@ -960,11 +1165,17 @@ impl ClientCore {
     /// `signalReceived`: connectivity data from the platform goes to the peer through the
     /// server, as an opaque blob.
     pub fn signal_received(&mut self, now_ms: u64, link_id: u64, blob: &[u8]) {
-        let Some(LinkPurpose::Direct(peer_id)) = self.links.get(&link_id).copied() else { return };
-        let Some(id) = self.peers.get(&peer_id).and_then(|p| p.rendezvous_id) else { return };
+        let Some(LinkPurpose::Direct(peer_id)) = self.links.get(&link_id).copied() else {
+            return;
+        };
+        let Some(id) = self.peers.get(&peer_id).and_then(|p| p.rendezvous_id) else {
+            return;
+        };
         self.send_control(
             now_ms,
-            &ControlMessage::new(kind::PEER_SIGNAL).with(field::RENDEZVOUS_ID, &id).with(field::BLOB, blob),
+            &ControlMessage::new(kind::PEER_SIGNAL)
+                .with(field::RENDEZVOUS_ID, &id)
+                .with(field::BLOB, blob),
         );
         self.drive(now_ms);
     }
@@ -982,7 +1193,9 @@ impl ClientCore {
                 identity: self.identity.clone(),
                 chain: self.chain.clone(),
                 roots: self.roots.clone(),
-                expectation: PeerExpectation::Server { host: self.server_host.clone() },
+                expectation: PeerExpectation::Server {
+                    host: self.server_host.clone(),
+                },
                 verifier,
                 versions: SessionConfig::default_versions(),
                 suites: self.provider.suites().to_vec(),
@@ -1009,7 +1222,14 @@ impl ClientCore {
     }
 
     fn on_control_established(&mut self, now_ms: u64, peer: &PeerInfo) {
-        self.audit_event(now_ms, "local device", &peer.subject_a, audit_op::SESSION_ESTABLISHED, "ok", "control plane");
+        self.audit_event(
+            now_ms,
+            "local device",
+            &peer.subject_a,
+            audit_op::SESSION_ESTABLISHED,
+            "ok",
+            "control plane",
+        );
         let certs = cert::parse_many(self.provider.as_ref(), &peer.chain).unwrap_or_default();
         self.server_issuing = certs.get(1).map(|c| c.fields.sign_public.clone());
         self.server_serial = Some(peer.serial);
@@ -1019,13 +1239,25 @@ impl ClientCore {
             .get(1)
             .map(|c| cert::key_id(self.provider.as_ref(), &c.sign_public_encoded))
             .unwrap_or([0; 16]);
-        self.send_control(now_ms, &ControlMessage::new(kind::CRL_REQUEST).with(field::ISSUER_KEY_ID, &issuer));
+        self.send_control(
+            now_ms,
+            &ControlMessage::new(kind::CRL_REQUEST).with(field::ISSUER_KEY_ID, &issuer),
+        );
     }
 
     fn on_crl(&mut self, now_ms: u64, raw: &[u8]) {
-        let Some(issuing) = self.server_issuing.clone() else { return };
+        let Some(issuing) = self.server_issuing.clone() else {
+            return;
+        };
         let Ok(crl) = Crl::verify(self.provider.as_ref(), &issuing, raw) else {
-            self.audit_event(now_ms, "server", "crl", audit_op::ALARM, "invalid", "the CRL's signature does not verify");
+            self.audit_event(
+                now_ms,
+                "server",
+                "crl",
+                audit_op::ALARM,
+                "invalid",
+                "the CRL's signature does not verify",
+            );
             return self.after_crl(now_ms, Err(ErrorKind::HandshakeFailed));
         };
         let revoked_server = self.server_serial.is_some_and(|s| crl.is_revoked(&s));
@@ -1037,7 +1269,11 @@ impl ClientCore {
             let live: Vec<u64> = self
                 .peers
                 .values()
-                .filter(|p| p.peer_info.as_ref().is_some_and(|i| current.is_revoked(&i.serial)))
+                .filter(|p| {
+                    p.peer_info
+                        .as_ref()
+                        .is_some_and(|i| current.is_revoked(&i.serial))
+                })
                 .map(|p| p.id)
                 .collect();
             (current.next_update, live)
@@ -1046,10 +1282,21 @@ impl ClientCore {
         self.crl_refresh_at = Some(refresh.saturating_sub(60 * 60 * 1000).max(now_ms + 60_000));
         self.dirty = true;
         for peer_id in live_revoked {
-            if let Some(session) = self.peers.get_mut(&peer_id).and_then(|p| p.session.as_mut()) {
+            if let Some(session) = self
+                .peers
+                .get_mut(&peer_id)
+                .and_then(|p| p.session.as_mut())
+            {
                 session.close(now_ms, reason::REJECTED);
             }
-            self.audit_event(now_ms, "server", "peer", audit_op::REVOCATION, "peerRevoked", "a live session's peer was revoked");
+            self.audit_event(
+                now_ms,
+                "server",
+                "peer",
+                audit_op::REVOCATION,
+                "peerRevoked",
+                "a live session's peer was revoked",
+            );
         }
         if revoked_server {
             return self.after_crl(now_ms, Err(ErrorKind::PeerRevoked));
@@ -1069,7 +1316,12 @@ impl ClientCore {
             return;
         }
         let message = match self.goal.as_ref() {
-            Some(Goal::Login { user_id, secret, mfa_code, .. }) => {
+            Some(Goal::Login {
+                user_id,
+                secret,
+                mfa_code,
+                ..
+            }) => {
                 self.stage = ControlStage::LoggingIn;
                 let mut m = ControlMessage::new(kind::LOGIN_REQUEST)
                     .with_str(field::USER_ID, user_id)
@@ -1079,7 +1331,9 @@ impl ClientCore {
                 }
                 m
             }
-            Some(Goal::Enroll { token, device_name, .. }) => {
+            Some(Goal::Enroll {
+                token, device_name, ..
+            }) => {
                 self.stage = ControlStage::Enrolling;
                 ControlMessage::new(kind::ENROLL_REQUEST)
                     .with_str(field::TOKEN, token)
@@ -1110,7 +1364,9 @@ impl ClientCore {
     }
 
     fn on_login_result(&mut self, now_ms: u64, message: &ControlMessage) {
-        let status = message.get_u16(field::STATUS).unwrap_or(ErrorKind::Internal.code() as u16);
+        let status = message
+            .get_u16(field::STATUS)
+            .unwrap_or(ErrorKind::Internal.code() as u16);
         let code = ErrorKind::from_code(u32::from(status)).unwrap_or(ErrorKind::Internal);
         let user = match self.goal.as_ref() {
             Some(Goal::Login { user_id, .. }) => user_id.clone(),
@@ -1136,7 +1392,9 @@ impl ClientCore {
     }
 
     fn on_enroll_result(&mut self, now_ms: u64, message: &ControlMessage) {
-        let status = message.get_u16(field::STATUS).unwrap_or(ErrorKind::Internal.code() as u16);
+        let status = message
+            .get_u16(field::STATUS)
+            .unwrap_or(ErrorKind::Internal.code() as u16);
         let code = ErrorKind::from_code(u32::from(status)).unwrap_or(ErrorKind::Internal);
         let op = match self.goal.as_ref() {
             Some(Goal::Enroll { op, .. }) => *op,
@@ -1164,17 +1422,31 @@ impl ClientCore {
     }
 
     fn install_enrolled_chain(&mut self, message: &ControlMessage, now_ms: u64) -> OpResult {
-        let chain = message.get(field::CHAIN).ok_or(ErrorKind::Internal)?.to_vec();
-        let certs = cert::parse_many(self.provider.as_ref(), &chain).map_err(|_| ErrorKind::Internal)?;
+        let chain = message
+            .get(field::CHAIN)
+            .ok_or(ErrorKind::Internal)?
+            .to_vec();
+        let certs =
+            cert::parse_many(self.provider.as_ref(), &chain).map_err(|_| ErrorKind::Internal)?;
         let leaf = certs.first().ok_or(ErrorKind::Internal)?;
         // A server could hand back a certificate for someone else's key, or a chain that
         // does not lead to a trusted root. Either would only fail later and more confusingly.
         if leaf.fields.sign_public != *self.identity.public_key() {
             return Err(ErrorKind::EnrollmentRejected);
         }
-        let expectation = PeerExpectation::Peer { user_id: leaf.fields.subject_a.clone(), device_id: None };
-        cert::validate_chain(self.provider.as_ref(), &self.roots, &chain, now_ms, Plane::Data, &expectation)
-            .map_err(|_| ErrorKind::EnrollmentRejected)?;
+        let expectation = PeerExpectation::Peer {
+            user_id: leaf.fields.subject_a.clone(),
+            device_id: None,
+        };
+        cert::validate_chain(
+            self.provider.as_ref(),
+            &self.roots,
+            &chain,
+            now_ms,
+            Plane::Data,
+            &expectation,
+        )
+        .map_err(|_| ErrorKind::EnrollmentRejected)?;
         let result = api::EnrollmentResult {
             device_id: leaf.fields.subject_b.clone(),
             fingerprint: to_hex(&self.my_fingerprint),
@@ -1204,9 +1476,19 @@ impl ClientCore {
         ) else {
             return;
         };
-        let Ok((ordered, reliable, label)) = parse_channel_options(options_raw) else { return };
-        let grants = message.get(field::RELAY_GRANTS).and_then(|g| parse_grants(g).ok()).unwrap_or_default();
-        let options = api::ChannelOptions { label, ordered, reliable, timeout_ms: None };
+        let Ok((ordered, reliable, label)) = parse_channel_options(options_raw) else {
+            return;
+        };
+        let grants = message
+            .get(field::RELAY_GRANTS)
+            .and_then(|g| parse_grants(g).ok())
+            .unwrap_or_default();
+        let options = api::ChannelOptions {
+            label,
+            ordered,
+            reliable,
+            timeout_ms: None,
+        };
         let peer_id = self.next_peer;
         self.next_peer += 1;
         let peer = Peer {
@@ -1247,9 +1529,10 @@ impl ClientCore {
     }
 
     fn on_ready(&mut self, now_ms: u64, message: &ControlMessage) {
-        let (Some(request_id), Some(rendezvous_id)) =
-            (message.get_id(field::REQUEST_ID), message.get_id(field::RENDEZVOUS_ID))
-        else {
+        let (Some(request_id), Some(rendezvous_id)) = (
+            message.get_id(field::REQUEST_ID),
+            message.get_id(field::RENDEZVOUS_ID),
+        ) else {
             return;
         };
         let found = self
@@ -1259,7 +1542,10 @@ impl ClientCore {
         let Some(peer) = found else { return };
         peer.rendezvous_id = Some(rendezvous_id);
         peer.rendezvous_expires_at = now_ms + RENDEZVOUS_TTL_MS;
-        peer.grants = message.get(field::RELAY_GRANTS).and_then(|g| parse_grants(g).ok()).unwrap_or_default();
+        peer.grants = message
+            .get(field::RELAY_GRANTS)
+            .and_then(|g| parse_grants(g).ok())
+            .unwrap_or_default();
         peer.hint_chain = message.get(field::CHAIN).unwrap_or_default().to_vec();
         peer.stage = PeerStage::Connecting;
         let peer_id = peer.id;
@@ -1267,22 +1553,37 @@ impl ClientCore {
     }
 
     fn on_rejected(&mut self, now_ms: u64, message: &ControlMessage) {
-        let Some(request_id) = message.get_id(field::REQUEST_ID) else { return };
-        let found = self.peers.values().find(|p| p.request_id == request_id).map(|p| p.id);
+        let Some(request_id) = message.get_id(field::REQUEST_ID) else {
+            return;
+        };
+        let found = self
+            .peers
+            .values()
+            .find(|p| p.request_id == request_id)
+            .map(|p| p.id);
         if let Some(peer_id) = found {
             self.fail_peer(now_ms, peer_id, ErrorKind::PeerUnavailable);
         }
     }
 
     fn on_signal(&mut self, message: &ControlMessage) {
-        let (Some(rendezvous_id), Some(blob)) = (message.get_id(field::RENDEZVOUS_ID), message.get(field::BLOB)) else {
+        let (Some(rendezvous_id), Some(blob)) = (
+            message.get_id(field::RENDEZVOUS_ID),
+            message.get(field::BLOB),
+        ) else {
             return;
         };
-        let found = self.peers.values_mut().find(|p| p.rendezvous_id == Some(rendezvous_id));
+        let found = self
+            .peers
+            .values_mut()
+            .find(|p| p.rendezvous_id == Some(rendezvous_id));
         let Some(peer) = found else { return };
         match peer.link {
             Some(link) if peer.path == Some(api::PathKind::Direct) => {
-                self.commands.push_back(TransportCommand::SendSignal { link_id: link, blob: blob.to_vec() });
+                self.commands.push_back(TransportCommand::SendSignal {
+                    link_id: link,
+                    blob: blob.to_vec(),
+                });
             }
             _ => peer.buffered_signals.push(blob.to_vec()),
         }
@@ -1291,7 +1592,8 @@ impl ClientCore {
     fn control_ended(&mut self, now_ms: u64, code: ErrorKind) {
         if let Some(link) = self.control_link.take() {
             if self.links.remove(&link).is_some() {
-                self.commands.push_back(TransportCommand::CloseLink { link_id: link });
+                self.commands
+                    .push_back(TransportCommand::CloseLink { link_id: link });
             }
         }
         self.control = None;
@@ -1322,14 +1624,20 @@ impl ClientCore {
             self.open_relay(now_ms, peer_id);
             return;
         }
-        let Some(peer) = self.peers.get_mut(&peer_id) else { return };
+        let Some(peer) = self.peers.get_mut(&peer_id) else {
+            return;
+        };
         let link = self.next_link;
         self.next_link += 1;
         self.links.insert(link, LinkPurpose::Direct(peer_id));
         peer.link = Some(link);
         peer.path = Some(api::PathKind::Direct);
         let initiator = peer.role == Role::Initiator;
-        let timeout = if initiator { DIRECT_TIMEOUT_INITIATOR_MS } else { DIRECT_TIMEOUT_RESPONDER_MS };
+        let timeout = if initiator {
+            DIRECT_TIMEOUT_INITIATOR_MS
+        } else {
+            DIRECT_TIMEOUT_RESPONDER_MS
+        };
         peer.direct_deadline = Some(now_ms + timeout);
         self.commands.push_back(TransportCommand::OpenLink {
             link_id: link,
@@ -1338,18 +1646,30 @@ impl ClientCore {
             initiator,
         });
         for blob in std::mem::take(&mut peer.buffered_signals) {
-            self.commands.push_back(TransportCommand::SendSignal { link_id: link, blob });
+            self.commands.push_back(TransportCommand::SendSignal {
+                link_id: link,
+                blob,
+            });
         }
     }
 
     fn open_relay(&mut self, now_ms: u64, peer_id: u64) {
-        let Some(peer) = self.peers.get_mut(&peer_id) else { return };
+        let Some(peer) = self.peers.get_mut(&peer_id) else {
+            return;
+        };
         let Some(address) = peer.grants.first().map(|g| g.address.clone()) else {
             return self.fail_peer(now_ms, peer_id, ErrorKind::PeerUnreachable);
         };
         let link = self.next_link;
         self.next_link += 1;
-        self.links.insert(link, LinkPurpose::Relay { peer: peer_id, joined: false, paired: false });
+        self.links.insert(
+            link,
+            LinkPurpose::Relay {
+                peer: peer_id,
+                joined: false,
+                paired: false,
+            },
+        );
         peer.link = Some(link);
         peer.path = Some(api::PathKind::Relayed);
         peer.direct_deadline = None;
@@ -1363,13 +1683,18 @@ impl ClientCore {
 
     fn direct_failed(&mut self, now_ms: u64, peer_id: u64) {
         match self.relay_policy {
-            api::RelayPolicy::DirectOnly => self.fail_peer(now_ms, peer_id, ErrorKind::PeerUnreachable),
+            api::RelayPolicy::DirectOnly => {
+                self.fail_peer(now_ms, peer_id, ErrorKind::PeerUnreachable)
+            }
             _ => {
-                let Some(peer) = self.peers.get_mut(&peer_id) else { return };
+                let Some(peer) = self.peers.get_mut(&peer_id) else {
+                    return;
+                };
                 peer.direct_deadline = None;
                 if let Some(link) = peer.link.take() {
                     if self.links.remove(&link).is_some() {
-                        self.commands.push_back(TransportCommand::CloseLink { link_id: link });
+                        self.commands
+                            .push_back(TransportCommand::CloseLink { link_id: link });
                     }
                 }
                 self.open_relay(now_ms, peer_id);
@@ -1378,11 +1703,17 @@ impl ClientCore {
     }
 
     fn start_peer_session(&mut self, now_ms: u64, peer_id: u64, caps: TransportCaps) {
-        let Some(peer) = self.peers.get_mut(&peer_id) else { return };
+        let Some(peer) = self.peers.get_mut(&peer_id) else {
+            return;
+        };
         if now_ms >= peer.rendezvous_expires_at {
             return self.fail_peer(now_ms, peer_id, ErrorKind::Timeout);
         }
-        let cached = self.trust.lock().unwrap_or_else(|e| e.into_inner()).cached_chain(&peer.user_id, peer.device_id.as_deref());
+        let cached = self
+            .trust
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .cached_chain(&peer.user_id, peer.device_id.as_deref());
         let config = SessionConfig {
             provider: self.provider.clone(),
             role: peer.role,
@@ -1391,11 +1722,18 @@ impl ClientCore {
             identity: self.identity.clone(),
             chain: self.chain.clone(),
             roots: self.roots.clone(),
-            expectation: PeerExpectation::Peer { user_id: peer.user_id.clone(), device_id: peer.device_id.clone() },
+            expectation: PeerExpectation::Peer {
+                user_id: peer.user_id.clone(),
+                device_id: peer.device_id.clone(),
+            },
             verifier: Box::new(DataPlaneVerifier::new(self.trust.clone())),
             versions: SessionConfig::default_versions(),
             suites: self.provider.suites().to_vec(),
-            cached_peer_chain: if peer.role == Role::Initiator { cached } else { None },
+            cached_peer_chain: if peer.role == Role::Initiator {
+                cached
+            } else {
+                None
+            },
             rendezvous_id: peer.rendezvous_id,
             limits: self.limits,
         };
@@ -1410,15 +1748,20 @@ impl ClientCore {
 
     /// Ends a peer before its session is usable, and fails whatever was waiting on it.
     fn fail_peer(&mut self, now_ms: u64, peer_id: u64, code: ErrorKind) {
-        let Some(peer) = self.peers.remove(&peer_id) else { return };
+        let Some(peer) = self.peers.remove(&peer_id) else {
+            return;
+        };
         if let Some(link) = peer.link {
             if self.links.remove(&link).is_some() {
-                self.commands.push_back(TransportCommand::CloseLink { link_id: link });
+                self.commands
+                    .push_back(TransportCommand::CloseLink { link_id: link });
             }
         }
         for waiting in peer.waiting {
             let (op, handle) = match waiting {
-                Waiting::Open { op, handle, .. } | Waiting::Accept { op, handle, .. } => (op, handle),
+                Waiting::Open { op, handle, .. } | Waiting::Accept { op, handle, .. } => {
+                    (op, handle)
+                }
             };
             self.channels.remove(&handle);
             self.complete(op, Err(code));
@@ -1431,20 +1774,37 @@ impl ClientCore {
 
     fn on_peer_event(&mut self, now_ms: u64, peer_id: u64, event: Event) {
         match event {
-            Event::Established { peer: info, session_id, .. } => self.on_peer_established(now_ms, peer_id, info, session_id),
+            Event::Established {
+                peer: info,
+                session_id,
+                ..
+            } => self.on_peer_established(now_ms, peer_id, info, session_id),
             Event::HandshakeFailed(failure) => {
                 let code = kind_of(failure.code);
                 // Anyone can connect to a listening direct port, and a stranger's bytes
                 // fail the handshake before anything is authenticated. That must not cost
                 // the call, and the relay is no less secure, because the same handshake
                 // authenticates the peer there.
-                let on_direct = self.peers.get(&peer_id).is_some_and(|p| p.path == Some(api::PathKind::Direct));
-                if on_direct && code == ErrorKind::HandshakeFailed && self.relay_policy == api::RelayPolicy::PreferDirect {
+                let on_direct = self
+                    .peers
+                    .get(&peer_id)
+                    .is_some_and(|p| p.path == Some(api::PathKind::Direct));
+                if on_direct
+                    && code == ErrorKind::HandshakeFailed
+                    && self.relay_policy == api::RelayPolicy::PreferDirect
+                {
                     if let Some(peer) = self.peers.get_mut(&peer_id) {
                         peer.session = None;
                         peer.stage = PeerStage::Connecting;
                     }
-                    self.audit_event(now_ms, "direct path", "session", audit_op::SESSION_ESTABLISHED, code.name(), failure.detail);
+                    self.audit_event(
+                        now_ms,
+                        "direct path",
+                        "session",
+                        audit_op::SESSION_ESTABLISHED,
+                        code.name(),
+                        failure.detail,
+                    );
                     return self.direct_failed(now_ms, peer_id);
                 }
                 let (user, device) = self
@@ -1453,23 +1813,49 @@ impl ClientCore {
                     .map(|p| (p.user_id.clone(), p.device_id.clone().unwrap_or_default()))
                     .unwrap_or_default();
                 // The detail stays local, and the application only sees the code.
-                self.audit_event(now_ms, &user, &device, audit_op::SESSION_ESTABLISHED, code.name(), failure.detail);
+                self.audit_event(
+                    now_ms,
+                    &user,
+                    &device,
+                    audit_op::SESSION_ESTABLISHED,
+                    code.name(),
+                    failure.detail,
+                );
                 if code == ErrorKind::PeerIdentityChanged {
                     let identity = self.peers.get(&peer_id).map(|p| self.identity_of(p));
                     if let Some(Ok(identity)) = identity {
-                        self.audit_event(now_ms, &user, &device, audit_op::PIN_CHANGED, code.name(), &identity.fingerprint);
-                        self.events.push_back(api::Event::PeerIdentityChanged { peer: identity });
+                        self.audit_event(
+                            now_ms,
+                            &user,
+                            &device,
+                            audit_op::PIN_CHANGED,
+                            code.name(),
+                            &identity.fingerprint,
+                        );
+                        self.events
+                            .push_back(api::Event::PeerIdentityChanged { peer: identity });
                     }
                     self.dirty = true;
                 }
                 self.fail_peer(now_ms, peer_id, code);
             }
             Event::PeerConfirmed => {}
-            Event::ChannelRequested { channel_id, options } => self.on_channel_requested(now_ms, peer_id, channel_id, options),
+            Event::ChannelRequested {
+                channel_id,
+                options,
+            } => self.on_channel_requested(now_ms, peer_id, channel_id, options),
             Event::ChannelOpened { channel_id } => self.on_channel_opened(peer_id, channel_id),
-            Event::ChannelRejected { channel_id, reason: code } => self.on_channel_rejected(peer_id, channel_id, code),
-            Event::ChannelClosed { channel_id, clean, .. } => self.on_channel_closed(peer_id, channel_id, clean),
-            Event::Message { channel_id, payload } => {
+            Event::ChannelRejected {
+                channel_id,
+                reason: code,
+            } => self.on_channel_rejected(peer_id, channel_id, code),
+            Event::ChannelClosed {
+                channel_id, clean, ..
+            } => self.on_channel_closed(peer_id, channel_id, clean),
+            Event::Message {
+                channel_id,
+                payload,
+            } => {
                 let handle = self
                     .channels
                     .iter()
@@ -1479,41 +1865,75 @@ impl ClientCore {
                     && let Some(entry) = self.channels.get_mut(&handle)
                 {
                     entry.inbox.push_back(payload);
-                    self.events.push_back(api::Event::MessageAvailable { channel_id: handle });
+                    self.events
+                        .push_back(api::Event::MessageAvailable { channel_id: handle });
                 }
             }
             Event::KeysRotated { send, epoch } => {
                 let peer = self.peer_ref(peer_id);
                 let object = peer.user_id.clone();
-                self.audit_event(now_ms, "local device", &object, audit_op::KEY_ROTATED, "ok", if send { "send" } else { "receive" });
-                self.events.push_back(api::Event::KeysRotated { peer, epoch });
+                self.audit_event(
+                    now_ms,
+                    "local device",
+                    &object,
+                    audit_op::KEY_ROTATED,
+                    "ok",
+                    if send { "send" } else { "receive" },
+                );
+                self.events
+                    .push_back(api::Event::KeysRotated { peer, epoch });
             }
             Event::RotationComplete => {
-                let ops = self.peers.get_mut(&peer_id).map(|p| std::mem::take(&mut p.rotate_ops)).unwrap_or_default();
+                let ops = self
+                    .peers
+                    .get_mut(&peer_id)
+                    .map(|p| std::mem::take(&mut p.rotate_ops))
+                    .unwrap_or_default();
                 for op in ops {
                     self.complete(op, Ok(OpValue::None));
                 }
             }
             Event::RotationTimedOut => {
-                let ops = self.peers.get_mut(&peer_id).map(|p| std::mem::take(&mut p.rotate_ops)).unwrap_or_default();
+                let ops = self
+                    .peers
+                    .get_mut(&peer_id)
+                    .map(|p| std::mem::take(&mut p.rotate_ops))
+                    .unwrap_or_default();
                 for op in ops {
                     self.complete(op, Err(ErrorKind::Timeout));
                 }
             }
-            Event::Closed { clean, reason: code } => self.on_peer_closed(now_ms, peer_id, clean, code),
+            Event::Closed {
+                clean,
+                reason: code,
+            } => self.on_peer_closed(now_ms, peer_id, clean, code),
             Event::Control { .. } => {}
         }
     }
 
     fn peer_ref(&self, peer_id: u64) -> api::PeerRef {
         match self.peers.get(&peer_id) {
-            Some(p) => api::PeerRef { user_id: p.user_id.clone(), device_id: p.device_id.clone() },
-            None => api::PeerRef { user_id: String::new(), device_id: None },
+            Some(p) => api::PeerRef {
+                user_id: p.user_id.clone(),
+                device_id: p.device_id.clone(),
+            },
+            None => api::PeerRef {
+                user_id: String::new(),
+                device_id: None,
+            },
         }
     }
 
-    fn on_peer_established(&mut self, now_ms: u64, peer_id: u64, info: PeerInfo, session_id: [u8; 16]) {
-        let Some(peer) = self.peers.get_mut(&peer_id) else { return };
+    fn on_peer_established(
+        &mut self,
+        now_ms: u64,
+        peer_id: u64,
+        info: PeerInfo,
+        session_id: [u8; 16],
+    ) {
+        let Some(peer) = self.peers.get_mut(&peer_id) else {
+            return;
+        };
         peer.stage = PeerStage::Established;
         peer.device_id = Some(info.subject_b.clone());
         peer.session_id = Some(session_id);
@@ -1523,7 +1943,11 @@ impl ClientCore {
             .waiting
             .iter()
             .filter_map(|w| match w {
-                Waiting::Open { op, handle, deadline } => Some((*op, *handle, *deadline)),
+                Waiting::Open {
+                    op,
+                    handle,
+                    deadline,
+                } => Some((*op, *handle, *deadline)),
                 Waiting::Accept { .. } => None,
             })
             .collect();
@@ -1537,24 +1961,44 @@ impl ClientCore {
             peer.peer_info = Some(info);
         }
         self.dirty = true;
-        self.audit_event(now_ms, &user, &device, audit_op::SESSION_ESTABLISHED, "ok", &to_hex(&session_id));
+        self.audit_event(
+            now_ms,
+            &user,
+            &device,
+            audit_op::SESSION_ESTABLISHED,
+            "ok",
+            &to_hex(&session_id),
+        );
         if status == PinStatus::Changed {
             // The local policy is warn, so the session continues, but it must be seen.
             let identity = self.peers.get(&peer_id).map(|p| self.identity_of(p));
             if let Some(Ok(identity)) = identity {
-                self.events.push_back(api::Event::PeerIdentityChanged { peer: identity });
+                self.events
+                    .push_back(api::Event::PeerIdentityChanged { peer: identity });
             }
         }
         let peer_ref = self.peer_ref(peer_id);
-        self.events.push_back(api::Event::PathChanged { peer: peer_ref, path });
+        self.events.push_back(api::Event::PathChanged {
+            peer: peer_ref,
+            path,
+        });
         for (op, handle, deadline) in waiting {
             self.open_on_session(now_ms, peer_id, op, handle, deadline);
         }
     }
 
-    fn on_channel_requested(&mut self, now_ms: u64, peer_id: u64, wire_id: u16, options: ChannelOptions) {
+    fn on_channel_requested(
+        &mut self,
+        now_ms: u64,
+        peer_id: u64,
+        wire_id: u16,
+        options: ChannelOptions,
+    ) {
         let accept = self.peers.get_mut(&peer_id).and_then(|peer| {
-            let index = peer.waiting.iter().position(|w| matches!(w, Waiting::Accept { .. }))?;
+            let index = peer
+                .waiting
+                .iter()
+                .position(|w| matches!(w, Waiting::Accept { .. }))?;
             Some(peer.waiting.remove(index))
         });
         if let Some(Waiting::Accept { op, handle, .. }) = accept {
@@ -1563,14 +2007,17 @@ impl ClientCore {
                 .peers
                 .get_mut(&peer_id)
                 .and_then(|p| p.session.as_mut())
-                .map_or(Err(ErrorCode::Closed), |s| s.accept_channel(now_ms, wire_id));
+                .map_or(Err(ErrorCode::Closed), |s| {
+                    s.accept_channel(now_ms, wire_id)
+                });
             match accepted {
                 Ok(()) => {
                     if let Some(entry) = self.channels.get_mut(&handle) {
                         entry.wire_id = Some(wire_id);
                         entry.open = true;
                     }
-                    self.events.push_back(api::Event::ChannelOpened { channel_id: handle });
+                    self.events
+                        .push_back(api::Event::ChannelOpened { channel_id: handle });
                     self.complete(op, Ok(OpValue::Channel(handle)));
                 }
                 Err(code) => {
@@ -1588,38 +2035,56 @@ impl ClientCore {
             reliable: options.reliable,
             timeout_ms: None,
         };
-        self.session_requests.insert(request.clone(), (peer_id, wire_id, options.clone()));
-        let Some(peer) = self.peers.get(&peer_id) else { return };
+        self.session_requests
+            .insert(request.clone(), (peer_id, wire_id, options.clone()));
+        let Some(peer) = self.peers.get(&peer_id) else {
+            return;
+        };
         if let Ok(identity) = self.identity_of(peer) {
-            self.events.push_back(api::Event::ChannelRequested { request_id: request, peer: identity, options });
+            self.events.push_back(api::Event::ChannelRequested {
+                request_id: request,
+                peer: identity,
+                options,
+            });
         }
     }
 
     fn channel_by_wire(&self, peer_id: u64, wire_id: u16) -> Option<u64> {
-        self.channels.iter().find(|(_, c)| c.peer == peer_id && c.wire_id == Some(wire_id)).map(|(h, _)| *h)
+        self.channels
+            .iter()
+            .find(|(_, c)| c.peer == peer_id && c.wire_id == Some(wire_id))
+            .map(|(h, _)| *h)
     }
 
     fn take_open_waiter(&mut self, peer_id: u64, handle: u64) -> Option<u64> {
         let peer = self.peers.get_mut(&peer_id)?;
-        let index = peer.waiting.iter().position(|w| matches!(w, Waiting::Open { handle: h, .. } if *h == handle))?;
+        let index = peer
+            .waiting
+            .iter()
+            .position(|w| matches!(w, Waiting::Open { handle: h, .. } if *h == handle))?;
         match peer.waiting.remove(index) {
             Waiting::Open { op, .. } | Waiting::Accept { op, .. } => Some(op),
         }
     }
 
     fn on_channel_opened(&mut self, peer_id: u64, wire_id: u16) {
-        let Some(handle) = self.channel_by_wire(peer_id, wire_id) else { return };
+        let Some(handle) = self.channel_by_wire(peer_id, wire_id) else {
+            return;
+        };
         if let Some(entry) = self.channels.get_mut(&handle) {
             entry.open = true;
         }
-        self.events.push_back(api::Event::ChannelOpened { channel_id: handle });
+        self.events
+            .push_back(api::Event::ChannelOpened { channel_id: handle });
         if let Some(op) = self.take_open_waiter(peer_id, handle) {
             self.complete(op, Ok(OpValue::Channel(handle)));
         }
     }
 
     fn on_channel_rejected(&mut self, peer_id: u64, wire_id: u16, code: u16) {
-        let Some(handle) = self.channel_by_wire(peer_id, wire_id) else { return };
+        let Some(handle) = self.channel_by_wire(peer_id, wire_id) else {
+            return;
+        };
         self.channels.remove(&handle);
         if let Some(op) = self.take_open_waiter(peer_id, handle) {
             let kind = match code {
@@ -1633,41 +2098,81 @@ impl ClientCore {
     }
 
     fn on_channel_closed(&mut self, peer_id: u64, wire_id: u16, clean: bool) {
-        let Some(handle) = self.channel_by_wire(peer_id, wire_id) else { return };
-        let Some(entry) = self.channels.get_mut(&handle) else { return };
+        let Some(handle) = self.channel_by_wire(peer_id, wire_id) else {
+            return;
+        };
+        let Some(entry) = self.channels.get_mut(&handle) else {
+            return;
+        };
         entry.open = false;
         let op = entry.close_op.take();
-        self.events.push_back(api::Event::ChannelClosed { channel_id: handle, clean });
+        self.events.push_back(api::Event::ChannelClosed {
+            channel_id: handle,
+            clean,
+        });
         if let Some(op) = op {
             self.complete(op, Ok(OpValue::None));
         }
     }
 
     fn on_peer_closed(&mut self, now_ms: u64, peer_id: u64, clean: bool, code: u16) {
-        let handles: Vec<u64> = self.channels.iter().filter(|(_, c)| c.peer == peer_id && c.open).map(|(h, _)| *h).collect();
+        let handles: Vec<u64> = self
+            .channels
+            .iter()
+            .filter(|(_, c)| c.peer == peer_id && c.open)
+            .map(|(h, _)| *h)
+            .collect();
         for handle in handles {
             if let Some(entry) = self.channels.get_mut(&handle) {
                 entry.open = false;
                 let op = entry.close_op.take();
-                self.events.push_back(api::Event::ChannelClosed { channel_id: handle, clean });
+                self.events.push_back(api::Event::ChannelClosed {
+                    channel_id: handle,
+                    clean,
+                });
                 if let Some(op) = op {
                     self.complete(op, Ok(OpValue::None));
                 }
             }
         }
-        let Some(peer) = self.peers.get(&peer_id) else { return };
+        let Some(peer) = self.peers.get(&peer_id) else {
+            return;
+        };
         let (user, session_id, path, stats) = (
             peer.user_id.clone(),
             peer.session_id,
             peer.path,
-            peer.session.as_ref().map(Session::stats).unwrap_or_default(),
+            peer.session
+                .as_ref()
+                .map(Session::stats)
+                .unwrap_or_default(),
         );
-        self.audit_event(now_ms, &user, "session", audit_op::SESSION_TEARDOWN, "ok", &format!("clean={clean} reason={code}"));
+        self.audit_event(
+            now_ms,
+            &user,
+            "session",
+            audit_op::SESSION_TEARDOWN,
+            "ok",
+            &format!("clean={clean} reason={code}"),
+        );
         // Section 12: self-reported, so it only feeds metrics.
         if let (Some(session_id), Some(path)) = (session_id, path) {
-            let mut counters = stats.records_sent.saturating_add(stats.records_received).to_be_bytes().to_vec();
-            counters.extend_from_slice(&stats.bytes_sent.saturating_add(stats.bytes_received).to_be_bytes());
-            let value = if path == api::PathKind::Direct { 1u8 } else { 2 };
+            let mut counters = stats
+                .records_sent
+                .saturating_add(stats.records_received)
+                .to_be_bytes()
+                .to_vec();
+            counters.extend_from_slice(
+                &stats
+                    .bytes_sent
+                    .saturating_add(stats.bytes_received)
+                    .to_be_bytes(),
+            );
+            let value = if path == api::PathKind::Direct {
+                1u8
+            } else {
+                2
+            };
             self.send_control(
                 now_ms,
                 &ControlMessage::new(kind::SESSION_REPORT)
@@ -1691,7 +2196,8 @@ impl ClientCore {
                 let link = self.control_link;
                 while let Some(frame) = control.poll_transmit() {
                     if let Some(link_id) = link {
-                        self.commands.push_back(TransportCommand::SendFrame { link_id, frame });
+                        self.commands
+                            .push_back(TransportCommand::SendFrame { link_id, frame });
                     }
                     moved = true;
                 }
@@ -1707,7 +2213,14 @@ impl ClientCore {
                 match event {
                     Event::Established { peer, .. } => self.on_control_established(now_ms, &peer),
                     Event::HandshakeFailed(failure) => {
-                        self.audit_event(now_ms, "server", &self.server_host.clone(), audit_op::SESSION_ESTABLISHED, failure.code.name(), failure.detail);
+                        self.audit_event(
+                            now_ms,
+                            "server",
+                            &self.server_host.clone(),
+                            audit_op::SESSION_ESTABLISHED,
+                            failure.code.name(),
+                            failure.detail,
+                        );
                         self.control_ended(now_ms, kind_of(failure.code));
                     }
                     Event::Control { body } => {
@@ -1722,9 +2235,13 @@ impl ClientCore {
 
             let ids: Vec<u64> = self.peers.keys().copied().collect();
             for id in ids {
-                let Some(peer) = self.peers.get_mut(&id) else { continue };
+                let Some(peer) = self.peers.get_mut(&id) else {
+                    continue;
+                };
                 let link = peer.link;
-                let Some(session) = peer.session.as_mut() else { continue };
+                let Some(session) = peer.session.as_mut() else {
+                    continue;
+                };
                 let mut frames = Vec::new();
                 while let Some(frame) = session.poll_transmit() {
                     frames.push(frame);
@@ -1736,7 +2253,8 @@ impl ClientCore {
                 moved |= !frames.is_empty() || !events.is_empty();
                 if let Some(link_id) = link {
                     for frame in frames {
-                        self.commands.push_back(TransportCommand::SendFrame { link_id, frame });
+                        self.commands
+                            .push_back(TransportCommand::SendFrame { link_id, frame });
                     }
                 }
                 for event in events {
@@ -1794,12 +2312,17 @@ impl ClientCore {
         if self.crl_refresh_at.is_some_and(|t| now_ms >= t) {
             self.crl_refresh_at = Some(now_ms + 60 * 60 * 1000);
             if self.is_ready() {
-                self.send_control(now_ms, &ControlMessage::new(kind::CRL_REQUEST).with(field::ISSUER_KEY_ID, &[0; 16]));
+                self.send_control(
+                    now_ms,
+                    &ControlMessage::new(kind::CRL_REQUEST).with(field::ISSUER_KEY_ID, &[0; 16]),
+                );
             }
         }
         let ids: Vec<u64> = self.peers.keys().copied().collect();
         for id in ids {
-            let Some(peer) = self.peers.get_mut(&id) else { continue };
+            let Some(peer) = self.peers.get_mut(&id) else {
+                continue;
+            };
             if let Some(session) = peer.session.as_mut() {
                 session.handle_timeout(now_ms);
             }
@@ -1815,11 +2338,16 @@ impl ClientCore {
                     p.waiting
                         .iter()
                         .filter_map(|w| match w {
-                            Waiting::Open { op, handle, deadline } | Waiting::Accept { op, handle, deadline }
-                                if now_ms >= *deadline =>
-                            {
-                                Some((*op, *handle))
+                            Waiting::Open {
+                                op,
+                                handle,
+                                deadline,
                             }
+                            | Waiting::Accept {
+                                op,
+                                handle,
+                                deadline,
+                            } if now_ms >= *deadline => Some((*op, *handle)),
                             _ => None,
                         })
                         .collect()

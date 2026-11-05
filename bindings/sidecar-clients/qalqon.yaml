@@ -1,0 +1,9 @@
+name: sidecar-clients
+kind: binding
+language: multiple
+delivery: sidecar
+targets: [linux-x64]
+depends_on: [core/sidecar]
+toolchain: { php: ">=8.2" }
+conformance: php bindings/sidecar-clients/php/conformance.php tests/conformance/testonly/*.json
+owners: [core-team]

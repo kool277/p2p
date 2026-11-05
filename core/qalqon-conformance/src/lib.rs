@@ -93,14 +93,20 @@ pub fn run_file(text: &str) -> Report {
 fn generate_kdf() -> Value {
     let p = TestOnlyProvider::seeded(b"kdf");
     let mut vectors = Vec::new();
-    for (i, (label, context, length)) in
-        [("key", vec![], 32usize), ("iv", vec![], 12), ("session id", vec![0xAB; 32], 16), ("safety", vec![], 60)]
-            .into_iter()
-            .enumerate()
+    for (i, (label, context, length)) in [
+        ("key", vec![], 32usize),
+        ("iv", vec![], 12),
+        ("session id", vec![0xAB; 32], 16),
+        ("safety", vec![], 60),
+    ]
+    .into_iter()
+    .enumerate()
     {
         let mut secret_bytes = [0u8; 32];
         p.random(&mut secret_bytes).ok();
-        let output = expand_label(&p, &secret_bytes, label, &context, length).map(|s| s.to_vec()).unwrap_or_default();
+        let output = expand_label(&p, &secret_bytes, label, &context, length)
+            .map(|s| s.to_vec())
+            .unwrap_or_default();
         vectors.push(json!({
             "name": format!("expand_label {i}: {label}"),
             "op": "expand_label",
@@ -114,7 +120,9 @@ fn generate_kdf() -> Value {
     let mut secret_bytes = [0u8; 32];
     p.random(&mut secret_bytes).ok();
     let transcript = b"a transcript".to_vec();
-    let derived = derive_secret(&p, &secret_bytes, "i hs", &transcript).map(|s| s.to_vec()).unwrap_or_default();
+    let derived = derive_secret(&p, &secret_bytes, "i hs", &transcript)
+        .map(|s| s.to_vec())
+        .unwrap_or_default();
     vectors.push(json!({
         "name": "derive_secret",
         "op": "derive_secret",
@@ -146,13 +154,20 @@ fn check_kdf(v: &Value) -> bool {
             v["length"].as_u64().unwrap_or(0) as usize,
         )
         .is_ok_and(|s| s.as_slice() == output),
-        Some("derive_secret") => {
-            derive_secret(&p, &hex(&v["secret"]), v["label"].as_str().unwrap_or(""), &hex(&v["transcript"]))
-                .is_ok_and(|s| s.as_slice() == output)
-        }
+        Some("derive_secret") => derive_secret(
+            &p,
+            &hex(&v["secret"]),
+            v["label"].as_str().unwrap_or(""),
+            &hex(&v["transcript"]),
+        )
+        .is_ok_and(|s| s.as_slice() == output),
         Some("record_nonce") => {
             let seq = u64::from_str_radix(v["seq"].as_str().unwrap_or("0"), 16).unwrap_or(0);
-            record_nonce(&hex(&v["iv"]), v["direction"].as_u64().unwrap_or(0) as u8, seq) == output
+            record_nonce(
+                &hex(&v["iv"]),
+                v["direction"].as_u64().unwrap_or(0) as u8,
+                seq,
+            ) == output
         }
         _ => false,
     }
@@ -175,10 +190,14 @@ fn fixture(seed: &str) -> Fixture {
     let p = provider.as_ref();
     let root_key = p.generate_signing_key().expect("seeded key");
     let issuing_key = p.generate_signing_key().expect("seeded key");
-    let encoded = |k: &dyn crypto_provider::SigningKey| cert::encode_public_key(k.public_key()).expect("encodes");
+    let encoded = |k: &dyn crypto_provider::SigningKey| {
+        cert::encode_public_key(k.public_key()).expect("encodes")
+    };
     let root_id = cert::key_id(p, &encoded(root_key.as_ref()));
     let issuing_id = cert::key_id(p, &encoded(issuing_key.as_ref()));
-    let certificate = |signer: &dyn crypto_provider::SigningKey, fields: CertFields| cert::issue(p, signer, &fields).expect("issues");
+    let certificate = |signer: &dyn crypto_provider::SigningKey, fields: CertFields| {
+        cert::issue(p, signer, &fields).expect("issues")
+    };
     let root = certificate(
         root_key.as_ref(),
         CertFields {
@@ -225,21 +244,50 @@ fn fixture(seed: &str) -> Fixture {
     };
     let (alice_key, alice_chain) = device("alice", "a1", 3);
     let (bob_key, bob_chain) = device("bob", "b1", 4);
-    Fixture { provider, root, alice_key, alice_chain, bob_key, bob_chain }
+    Fixture {
+        provider,
+        root,
+        alice_key,
+        alice_chain,
+        bob_key,
+        bob_chain,
+    }
 }
 
-fn session_config(f: &Fixture, initiator: bool, transport: TransportCaps, suite: u16, cached: Option<Vec<u8>>) -> SessionConfig {
+fn session_config(
+    f: &Fixture,
+    initiator: bool,
+    transport: TransportCaps,
+    suite: u16,
+    cached: Option<Vec<u8>>,
+) -> SessionConfig {
     let roots = cert::parse_many(f.provider.as_ref(), &f.root).expect("the fixture's root parses");
     SessionConfig {
         provider: f.provider.clone(),
-        role: if initiator { Role::Initiator } else { Role::Responder },
+        role: if initiator {
+            Role::Initiator
+        } else {
+            Role::Responder
+        },
         plane: Plane::Data,
         transport,
-        identity: if initiator { f.alice_key.clone() } else { f.bob_key.clone() },
-        chain: if initiator { f.alice_chain.clone() } else { f.bob_chain.clone() },
+        identity: if initiator {
+            f.alice_key.clone()
+        } else {
+            f.bob_key.clone()
+        },
+        chain: if initiator {
+            f.alice_chain.clone()
+        } else {
+            f.bob_chain.clone()
+        },
         roots,
         expectation: PeerExpectation::Peer {
-            user_id: if initiator { "bob".into() } else { "alice".into() },
+            user_id: if initiator {
+                "bob".into()
+            } else {
+                "alice".into()
+            },
             device_id: None,
         },
         verifier: Box::new(UncheckedPeers),
@@ -251,13 +299,22 @@ fn session_config(f: &Fixture, initiator: bool, transport: TransportCaps, suite:
     }
 }
 
-/// Runs one handshake to completion and returns `(frames in order, session id)`.
-fn run_handshake(seed: &str, strict: bool, suite: u16, known: bool) -> (Vec<(String, Vec<u8>)>, Option<[u8; 16]>) {
+/// `(frames in order with their sender, session id)`.
+type HandshakeRun = (Vec<(String, Vec<u8>)>, Option<[u8; 16]>);
+
+/// Runs one handshake to completion.
+fn run_handshake(seed: &str, strict: bool, suite: u16, known: bool) -> HandshakeRun {
     let f = fixture(seed);
-    let transport = if strict { TransportCaps::STREAM } else { TransportCaps::DATAGRAM };
+    let transport = if strict {
+        TransportCaps::STREAM
+    } else {
+        TransportCaps::DATAGRAM
+    };
     let cached = known.then(|| f.bob_chain.clone());
-    let mut i = Session::new(session_config(&f, true, transport, suite, cached), NOW).expect("session");
-    let mut r = Session::new(session_config(&f, false, transport, suite, None), NOW).expect("session");
+    let mut i =
+        Session::new(session_config(&f, true, transport, suite, cached), NOW).expect("session");
+    let mut r =
+        Session::new(session_config(&f, false, transport, suite, None), NOW).expect("session");
     let mut frames = Vec::new();
     for _ in 0..8 {
         let mut moved = false;
@@ -285,10 +342,34 @@ fn run_handshake(seed: &str, strict: bool, suite: u16, known: bool) -> (Vec<(Str
 fn handshake_cases() -> Vec<(&'static str, &'static str, bool, u16, bool)> {
     vec![
         ("strict, X25519", "hs-1", true, SUITE_TESTONLY_X25519, false),
-        ("lossy with padding, X25519", "hs-2", false, SUITE_TESTONLY_X25519, false),
-        ("strict, X25519 + ML-KEM-768", "hs-3", true, SUITE_TESTONLY_X25519_ML_KEM_768, false),
-        ("lossy with fragments, X25519 + ML-KEM-768", "hs-4", false, SUITE_TESTONLY_X25519_ML_KEM_768, false),
-        ("strict, known_responder omits the chain", "hs-5", true, SUITE_TESTONLY_X25519, true),
+        (
+            "lossy with padding, X25519",
+            "hs-2",
+            false,
+            SUITE_TESTONLY_X25519,
+            false,
+        ),
+        (
+            "strict, X25519 + ML-KEM-768",
+            "hs-3",
+            true,
+            SUITE_TESTONLY_X25519_ML_KEM_768,
+            false,
+        ),
+        (
+            "lossy with fragments, X25519 + ML-KEM-768",
+            "hs-4",
+            false,
+            SUITE_TESTONLY_X25519_ML_KEM_768,
+            false,
+        ),
+        (
+            "strict, known_responder omits the chain",
+            "hs-5",
+            true,
+            SUITE_TESTONLY_X25519,
+            true,
+        ),
     ]
 }
 
@@ -318,7 +399,9 @@ fn check_handshake(v: &Value) -> bool {
         v["suite"].as_u64().unwrap_or(0) as u16,
         v["known_responder"].as_bool().unwrap_or(false),
     );
-    let Some(expected) = v["frames"].as_array() else { return false };
+    let Some(expected) = v["frames"].as_array() else {
+        return false;
+    };
     frames.len() == expected.len()
         && frames.iter().zip(expected).all(|((from, bytes), e)| {
             e["from"].as_str() == Some(from.as_str()) && hex(&e["bytes"]) == *bytes
@@ -328,8 +411,25 @@ fn check_handshake(v: &Value) -> bool {
 
 // ---------------------------------------------------------------------- records
 
-fn record_layer(p: Arc<dyn CryptoProvider>, strict: bool, initiator: bool, i_ap: &[u8], r_ap: &[u8]) -> Option<RecordLayer> {
-    RecordLayer::new(p, VERSION_0_1, SUITE_TESTONLY_X25519, strict, initiator, secret(i_ap), secret(r_ap), Limits::default(), NOW).ok()
+fn record_layer(
+    p: Arc<dyn CryptoProvider>,
+    strict: bool,
+    initiator: bool,
+    i_ap: &[u8],
+    r_ap: &[u8],
+) -> Option<RecordLayer> {
+    RecordLayer::new(
+        p,
+        VERSION_0_1,
+        SUITE_TESTONLY_X25519,
+        strict,
+        initiator,
+        secret(i_ap),
+        secret(r_ap),
+        Limits::default(),
+        NOW,
+    )
+    .ok()
 }
 
 fn generate_records() -> Value {
@@ -339,10 +439,16 @@ fn generate_records() -> Value {
     provider.random(&mut r_ap).ok();
     let mut vectors = Vec::new();
     for strict in [true, false] {
-        let Some(mut sender) = record_layer(provider.clone(), strict, true, &i_ap, &r_ap) else { continue };
+        let Some(mut sender) = record_layer(provider.clone(), strict, true, &i_ap, &r_ap) else {
+            continue;
+        };
         let keys = traffic_keys(provider.as_ref(), &i_ap);
         let mut frames = Vec::new();
-        for (channel, plain) in [(0u16, vec![0x08u8; 9]), (1, vec![0x01, 0, 0, 0, 0, 0, 0, 1, b'h', b'i']), (1, vec![0x01; 40])] {
+        for (channel, plain) in [
+            (0u16, vec![0x08u8; 9]),
+            (1, vec![0x01, 0, 0, 0, 0, 0, 0, 1, b'h', b'i']),
+            (1, vec![0x01; 40]),
+        ] {
             if let Ok(frame) = sender.seal(channel, &plain) {
                 frames.push(json!({ "channel": channel, "plaintext": to_hex(&plain), "frame": to_hex(&frame) }));
             }
@@ -351,7 +457,9 @@ fn generate_records() -> Value {
         if sender.rotate_send(NOW).is_ok()
             && let Ok(frame) = sender.seal(1, &[0x01, 9])
         {
-            frames.push(json!({ "channel": 1, "plaintext": "0109", "frame": to_hex(&frame), "epoch": 1 }));
+            frames.push(
+                json!({ "channel": 1, "plaintext": "0109", "frame": to_hex(&frame), "epoch": 1 }),
+            );
         }
         vectors.push(json!({
             "name": if strict { "seal and open, strict" } else { "seal and open, lossy" },
@@ -375,7 +483,9 @@ fn check_records(v: &Value) -> bool {
     ) else {
         return false;
     };
-    let Some(frames) = v["frames"].as_array() else { return false };
+    let Some(frames) = v["frames"].as_array() else {
+        return false;
+    };
     for frame in frames {
         let (plain, bytes) = (hex(&frame["plaintext"]), hex(&frame["frame"]));
         if frame["epoch"].as_u64() == Some(1) {
@@ -388,10 +498,17 @@ fn check_records(v: &Value) -> bool {
             }
         }
         // Sealing reproduces the bytes, which pins the nonce, tag and header layout.
-        if sender.seal(frame["channel"].as_u64().unwrap_or(0) as u16, &plain).ok().as_deref() != Some(bytes.as_slice()) {
+        if sender
+            .seal(frame["channel"].as_u64().unwrap_or(0) as u16, &plain)
+            .ok()
+            .as_deref()
+            != Some(bytes.as_slice())
+        {
             return false;
         }
-        let Ok((header, _)) = wire::parse_frame(&bytes) else { return false };
+        let Ok((header, _)) = wire::parse_frame(&bytes) else {
+            return false;
+        };
         match receiver.open(&header, &bytes, NOW) {
             Ok(opened) if opened.plaintext.as_slice() == plain => {}
             _ => return false,
@@ -430,13 +547,25 @@ fn generate_negative() -> Value {
     cases.push(("XX_RESP sent to a responder".to_string(), resp));
     cases.push(("empty frame".to_string(), Vec::new()));
     cases.push(("one byte".to_string(), vec![0x51]));
-    let vectors: Vec<Value> = cases.into_iter().map(|(name, frame)| json!({ "name": name, "frame": to_hex(&frame) })).collect();
+    let vectors: Vec<Value> = cases
+        .into_iter()
+        .map(|(name, frame)| json!({ "name": name, "frame": to_hex(&frame) }))
+        .collect();
     json!({ "kind": "negative", "provider": "testonly", "vectors": vectors })
 }
 
 fn check_negative(v: &Value) -> bool {
     let f = fixture("neg");
-    let Ok(mut r) = Session::new(session_config(&f, false, TransportCaps::STREAM, SUITE_TESTONLY_X25519, None), NOW) else {
+    let Ok(mut r) = Session::new(
+        session_config(
+            &f,
+            false,
+            TransportCaps::STREAM,
+            SUITE_TESTONLY_X25519,
+            None,
+        ),
+        NOW,
+    ) else {
         return false;
     };
     r.handle_frame(NOW, &hex(&v["frame"]));
@@ -481,7 +610,11 @@ fn audit_events() -> Vec<AuditEvent> {
             subject: format!("subject-{n}"),
             object: format!("object-{n}"),
             operation: "access".into(),
-            result: if n % 2 == 0 { "ok".into() } else { "accessDenied".into() },
+            result: if n % 2 == 0 {
+                "ok".into()
+            } else {
+                "accessDenied".into()
+            },
             detail: "ünïcode détail".into(),
         })
         .collect()
@@ -490,7 +623,10 @@ fn audit_events() -> Vec<AuditEvent> {
 fn generate_audit() -> Value {
     let p = TestOnlyProvider::new();
     let mut chain = AuditChain::new(&p, b"vector fingerprint");
-    let hashes: Vec<String> = audit_events().into_iter().map(|e| chain.append(&p, e).entry_hash).collect();
+    let hashes: Vec<String> = audit_events()
+        .into_iter()
+        .map(|e| chain.append(&p, e).entry_hash)
+        .collect();
     json!({
         "kind": "audit",
         "provider": "testonly",
@@ -501,10 +637,15 @@ fn generate_audit() -> Value {
 fn check_audit(v: &Value) -> bool {
     let p = TestOnlyProvider::new();
     let mut chain = AuditChain::new(&p, &hex(&v["fingerprint"]));
-    let Some(expected) = v["entry_hashes"].as_array() else { return false };
+    let Some(expected) = v["entry_hashes"].as_array() else {
+        return false;
+    };
     let events = audit_events();
     events.len() == expected.len()
-        && events.into_iter().zip(expected).all(|(e, h)| h.as_str() == Some(chain.append(&p, e).entry_hash.as_str()))
+        && events
+            .into_iter()
+            .zip(expected)
+            .all(|(e, h)| h.as_str() == Some(chain.append(&p, e).entry_hash.as_str()))
 }
 
 #[cfg(test)]
@@ -527,8 +668,15 @@ mod tests {
     fn a_changed_vector_fails() {
         let (_, value) = generate().remove(1);
         let mut value = value;
-        let frame = value["vectors"][0]["frames"][1]["bytes"].as_str().unwrap().to_string();
-        let flipped = format!("{}{}", if frame.starts_with('0') { "1" } else { "0" }, &frame[1..]);
+        let frame = value["vectors"][0]["frames"][1]["bytes"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let flipped = format!(
+            "{}{}",
+            if frame.starts_with('0') { "1" } else { "0" },
+            &frame[1..]
+        );
         value["vectors"][0]["frames"][1]["bytes"] = json!(flipped);
         assert!(!run_file(&value.to_string()).failed.is_empty());
     }

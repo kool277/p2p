@@ -1,0 +1,27 @@
+(* Properties 1 and 2 in docs/PROTOCOL.md, section 15. An attacker with its own valid
+   certificate takes part in phase 0. Identity keys and the CA key are published in phase 1,
+   after the sessions have ended, and what was sent to honest peers must stay secret.
+
+   honest_run.pv shows that the honest run completes, so this is not vacuous. *)
+
+set reconstructTrace = false.
+
+query attacker(secret_from_i).
+query attacker(secret_from_r).
+
+free mallory: id.
+free skm: skey.
+
+process
+    new skca: skey;
+    new ska: skey;
+    new skb: skey;
+    let capk = pk(skca) in
+    let chain_a = cert(alice, pk(ska), skca) in
+    let chain_b = cert(bob, pk(skb), skca) in
+    out(c, (capk, pk(ska), pk(skb), chain_a, chain_b, cert(mallory, pk(skm), skca)));
+    (
+        (!Initiator(alice, ska, chain_a, capk, false))
+      | (!Responder(bob, skb, chain_b, capk, false))
+      | (phase 1; out(c, (ska, skb, skca)))
+    )

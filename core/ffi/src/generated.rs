@@ -227,8 +227,7 @@ pub unsafe extern "C" fn qalqon_session_reject_channel(handle: *const qalqon_ses
     guard(|| {
         let object = unsafe { handle_ref(handle) }?;
         let request_id = unsafe { str_arg(request_id) }?;
-        let result = object.inner.reject_channel(request_id)?;
-        let _ = result;
+        object.inner.reject_channel(request_id)?;
         Ok(())
     })
 }
@@ -257,8 +256,7 @@ pub unsafe extern "C" fn qalqon_session_rotate_keys(handle: *const qalqon_sessio
     guard(|| {
         let object = unsafe { handle_ref(handle) }?;
         let peer: Option<api::PeerRef> = unsafe { json_arg(peer) }?;
-        let result = object.inner.rotate_keys(peer)?;
-        let _ = result;
+        object.inner.rotate_keys(peer)?;
         Ok(())
     })
 }
@@ -298,8 +296,7 @@ pub unsafe extern "C" fn qalqon_session_next_event(handle: *const qalqon_session
 pub unsafe extern "C" fn qalqon_session_close(handle: *const qalqon_session_t) -> qalqon_status_t {
     guard(|| {
         let object = unsafe { handle_ref(handle) }?;
-        let result = object.inner.close()?;
-        let _ = result;
+        object.inner.close()?;
         Ok(())
     })
 }
@@ -313,8 +310,7 @@ pub unsafe extern "C" fn qalqon_channel_send(handle: *const qalqon_channel_t, pa
     guard(|| {
         let object = unsafe { handle_ref(handle) }?;
         let payload = unsafe { bytes_arg(payload, payload_len) }?;
-        let result = object.inner.send(payload)?;
-        let _ = result;
+        object.inner.send(payload)?;
         Ok(())
     })
 }
@@ -353,8 +349,7 @@ pub unsafe extern "C" fn qalqon_channel_info(handle: *const qalqon_channel_t, ou
 pub unsafe extern "C" fn qalqon_channel_close(handle: *const qalqon_channel_t) -> qalqon_status_t {
     guard(|| {
         let object = unsafe { handle_ref(handle) }?;
-        let result = object.inner.close()?;
-        let _ = result;
+        object.inner.close()?;
         Ok(())
     })
 }
@@ -394,8 +389,7 @@ pub unsafe extern "C" fn qalqon_external_transport_link_opened(handle: *const qa
     guard(|| {
         let object = unsafe { handle_ref(handle) }?;
         let caps: api::TransportCaps = unsafe { json_arg(caps) }?;
-        let result = object.inner.link_opened(link_id, caps)?;
-        let _ = result;
+        object.inner.link_opened(link_id, caps)?;
         Ok(())
     })
 }
@@ -408,8 +402,7 @@ pub unsafe extern "C" fn qalqon_external_transport_link_opened(handle: *const qa
 pub unsafe extern "C" fn qalqon_external_transport_link_closed(handle: *const qalqon_external_transport_t, link_id: u64) -> qalqon_status_t {
     guard(|| {
         let object = unsafe { handle_ref(handle) }?;
-        let result = object.inner.link_closed(link_id)?;
-        let _ = result;
+        object.inner.link_closed(link_id)?;
         Ok(())
     })
 }
@@ -423,8 +416,7 @@ pub unsafe extern "C" fn qalqon_external_transport_frame_received(handle: *const
     guard(|| {
         let object = unsafe { handle_ref(handle) }?;
         let frame = unsafe { bytes_arg(frame, frame_len) }?;
-        let result = object.inner.frame_received(link_id, frame)?;
-        let _ = result;
+        object.inner.frame_received(link_id, frame)?;
         Ok(())
     })
 }
@@ -438,8 +430,7 @@ pub unsafe extern "C" fn qalqon_external_transport_signal_received(handle: *cons
     guard(|| {
         let object = unsafe { handle_ref(handle) }?;
         let blob = unsafe { bytes_arg(blob, blob_len) }?;
-        let result = object.inner.signal_received(link_id, blob)?;
-        let _ = result;
+        object.inner.signal_received(link_id, blob)?;
         Ok(())
     })
 }
@@ -467,8 +458,7 @@ pub unsafe extern "C" fn qalqon_server_core_on_frame(handle: *const qalqon_serve
     guard(|| {
         let object = unsafe { handle_ref(handle) }?;
         let frame = unsafe { bytes_arg(frame, frame_len) }?;
-        let result = object.inner.on_frame(conn_id, frame)?;
-        let _ = result;
+        object.inner.on_frame(conn_id, frame)?;
         Ok(())
     })
 }
@@ -481,8 +471,7 @@ pub unsafe extern "C" fn qalqon_server_core_on_frame(handle: *const qalqon_serve
 pub unsafe extern "C" fn qalqon_server_core_on_close(handle: *const qalqon_server_core_t, conn_id: u64) -> qalqon_status_t {
     guard(|| {
         let object = unsafe { handle_ref(handle) }?;
-        let result = object.inner.on_close(conn_id)?;
-        let _ = result;
+        object.inner.on_close(conn_id)?;
         Ok(())
     })
 }
@@ -495,8 +484,7 @@ pub unsafe extern "C" fn qalqon_server_core_on_close(handle: *const qalqon_serve
 pub unsafe extern "C" fn qalqon_server_core_tick(handle: *const qalqon_server_core_t, now_ms: u64) -> qalqon_status_t {
     guard(|| {
         let object = unsafe { handle_ref(handle) }?;
-        let result = object.inner.tick(now_ms)?;
-        let _ = result;
+        object.inner.tick(now_ms)?;
         Ok(())
     })
 }
@@ -523,8 +511,7 @@ pub unsafe extern "C" fn qalqon_server_core_complete_effect(handle: *const qalqo
     guard(|| {
         let object = unsafe { handle_ref(handle) }?;
         let record = unsafe { optional_bytes_arg(record, record_len) }?;
-        let result = object.inner.complete_effect(effect_id, status, record)?;
-        let _ = result;
+        object.inner.complete_effect(effect_id, status, record)?;
         Ok(())
     })
 }
@@ -578,8 +565,7 @@ pub unsafe extern "C" fn qalqon_server_core_metrics(handle: *const qalqon_server
 pub unsafe extern "C" fn qalqon_server_core_shutdown(handle: *const qalqon_server_core_t) -> qalqon_status_t {
     guard(|| {
         let object = unsafe { handle_ref(handle) }?;
-        let result = object.inner.shutdown()?;
-        let _ = result;
+        object.inner.shutdown()?;
         Ok(())
     })
 }

@@ -1,0 +1,10 @@
+name: {{name}}
+kind: server
+language: {{lang}}
+framework: {{framework}}
+delivery: ffi
+targets: [linux-x64]
+depends_on: [infra/relay]
+toolchain: {}
+primary_pairs: []
+owners: [unowned]

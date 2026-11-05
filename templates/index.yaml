@@ -1,0 +1,17 @@
+# The scaffolding registry. `qalqon new` reads templates from this folder, and this list
+# is community-extensible: add a language under binding-ffi/ or binding-sidecar/ to give
+# it a working starting point. A scaffolded folder must pass conformance (a binding) or
+# interop (a client or server) before it is merged.
+templates:
+  binding-ffi:
+    languages: [python]
+    fallback: generic
+  binding-wasm:
+    languages: []
+    fallback: generic
+  binding-sidecar:
+    languages: [python]
+    fallback: generic
+  client: {}
+  server: {}
+  target: {}

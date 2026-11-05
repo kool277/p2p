@@ -1,0 +1,12 @@
+name: web-react
+kind: client
+language: javascript
+framework: react
+delivery: wasm
+targets: [web]
+depends_on: [packages/js/react]
+toolchain: { node: ">=22", npm: ">=10" }
+build:
+  - npm --prefix clients/web-react install --no-audit --no-fund --silent
+  - npm --prefix clients/web-react run --silent build -- --logLevel warn
+owners: [core-team]

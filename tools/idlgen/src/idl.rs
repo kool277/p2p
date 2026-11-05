@@ -134,31 +134,47 @@ fn name_of(k: &Value) -> String {
 }
 
 fn fields(v: &Value, key: &str) -> Vec<Field> {
-    let Some(m) = map(v, key) else { return Vec::new() };
+    let Some(m) = map(v, key) else {
+        return Vec::new();
+    };
     m.iter()
-        .map(|(k, f)| Field { name: name_of(k), ty: Ty::parse(&text(f, "type")), doc: text(f, "doc") })
+        .map(|(k, f)| Field {
+            name: name_of(k),
+            ty: Ty::parse(&text(f, "type")),
+            doc: text(f, "doc"),
+        })
         .collect()
 }
 
 fn callable(name: String, v: &Value) -> Callable {
     Callable {
         name,
-        is_async: v.get("async").and_then(Value::as_bool).expect("async is required"),
+        is_async: v
+            .get("async")
+            .and_then(Value::as_bool)
+            .expect("async is required"),
         doc: text(v, "doc"),
         params: fields(v, "params"),
         returns: v.get("returns").and_then(Value::as_str).map(Ty::parse),
         errors: v
             .get("errors")
             .and_then(Value::as_sequence)
-            .map(|s| s.iter().filter_map(Value::as_str).map(str::to_string).collect())
+            .map(|s| {
+                s.iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_string)
+                    .collect()
+            })
             .unwrap_or_default(),
     }
 }
 
 impl Idl {
     pub fn parse(source: &str) -> Result<Idl, String> {
-        let root: Value = serde_yaml::from_str(source).map_err(|e| format!("the IDL is not valid YAML: {e}"))?;
-        let section = |key: &str| map(&root, key).ok_or_else(|| format!("the IDL has no {key} section"));
+        let root: Value =
+            serde_yaml::from_str(source).map_err(|e| format!("the IDL is not valid YAML: {e}"))?;
+        let section =
+            |key: &str| map(&root, key).ok_or_else(|| format!("the IDL has no {key} section"));
         let idl = Idl {
             api_version: text(&root, "api_version"),
             protocol_version: text(&root, "protocol_version"),
@@ -166,7 +182,10 @@ impl Idl {
                 .iter()
                 .map(|(k, v)| ErrorDef {
                     name: name_of(k),
-                    code: v.get("code").and_then(Value::as_u64).expect("code is required") as u32,
+                    code: v
+                        .get("code")
+                        .and_then(Value::as_u64)
+                        .expect("code is required") as u32,
                     doc: text(v, "doc"),
                 })
                 .collect(),
@@ -184,7 +203,11 @@ impl Idl {
                 .collect(),
             records: section("records")?
                 .iter()
-                .map(|(k, v)| RecordDef { name: name_of(k), doc: text(v, "doc"), fields: fields(v, "fields") })
+                .map(|(k, v)| RecordDef {
+                    name: name_of(k),
+                    doc: text(v, "doc"),
+                    fields: fields(v, "fields"),
+                })
                 .collect(),
             variants: section("variants")?
                 .iter()
@@ -194,11 +217,18 @@ impl Idl {
                     cases: map(v, "cases")
                         .expect("a variant has cases")
                         .iter()
-                        .map(|(a, c)| CaseDef { name: name_of(a), doc: text(c, "doc"), fields: fields(c, "fields") })
+                        .map(|(a, c)| CaseDef {
+                            name: name_of(a),
+                            doc: text(c, "doc"),
+                            fields: fields(c, "fields"),
+                        })
                         .collect(),
                 })
                 .collect(),
-            functions: section("functions")?.iter().map(|(k, v)| callable(name_of(k), v)).collect(),
+            functions: section("functions")?
+                .iter()
+                .map(|(k, v)| callable(name_of(k), v))
+                .collect(),
             interfaces: section("interfaces")?
                 .iter()
                 .map(|(k, v)| InterfaceDef {
@@ -282,7 +312,11 @@ impl Idl {
         for v in &self.variants {
             for c in &v.cases {
                 for f in &c.fields {
-                    self.check_ty(&f.ty, &format!("{}.{}.{}", v.name, c.name, f.name), &mut problems);
+                    self.check_ty(
+                        &f.ty,
+                        &format!("{}.{}.{}", v.name, c.name, f.name),
+                        &mut problems,
+                    );
                 }
             }
         }
@@ -294,7 +328,11 @@ impl Idl {
                 self.check_callable(m, &format!("{}.{}", i.name, m.name), &mut problems);
             }
         }
-        if problems.is_empty() { Ok(()) } else { Err(problems.join("\n")) }
+        if problems.is_empty() {
+            Ok(())
+        } else {
+            Err(problems.join("\n"))
+        }
     }
 }
 

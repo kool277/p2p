@@ -1,0 +1,10 @@
+name: ffi
+kind: core
+language: rust
+delivery: rust
+targets: [linux-x64]
+depends_on: [core/qalqon-sdk]
+toolchain: { cargo: ">=1.85" }
+build:
+  - cargo build -q -p qalqon-ffi
+owners: [core-team]

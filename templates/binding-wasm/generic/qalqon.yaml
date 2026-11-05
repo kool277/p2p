@@ -1,0 +1,9 @@
+name: {{name}}
+kind: binding
+language: {{lang}}
+delivery: wasm
+targets: [linux-x64]
+depends_on: [bindings/wasm]
+toolchain: {}
+conformance: "bash bindings/{{name}}/conformance.sh tests/conformance/testonly/*.json"
+owners: [unowned]

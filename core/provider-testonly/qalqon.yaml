@@ -1,0 +1,8 @@
+name: provider-testonly
+kind: core
+language: rust
+delivery: rust
+targets: [linux-x64]
+depends_on: [core/crypto-provider, core/crypto-ext]
+toolchain: { cargo: ">=1.85" }
+owners: [core-team]

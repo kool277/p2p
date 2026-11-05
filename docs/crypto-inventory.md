@@ -46,6 +46,22 @@ The protocol uses these as symbolic constants until they are known.
 | Are official control examples available? | The Phase 1 gate requires known-answer tests from them | Without them, the Phase 1 gate cannot be met as written |
 | May the library or its bindings be published? | This repository is public | If not, the library must stay outside the repository, and `provider-<lib>` may need a private home too |
 
+## What stands in for the library today
+
+`core/provider-testonly` implements every operation above, so engine work could proceed. **None of this is the library, and none of it counts towards O'z DSt.**
+
+| Provider operation | Test-only construction |
+| --- | --- |
+| `hash` | SHA-256 |
+| `mac`, `hkdf_*` | The generic HMAC and HKDF in `core/crypto-provider`, which a library with only a hash can also use |
+| `aead_*` | AES-256-CTR with HMAC-SHA-256, in encrypt-then-MAC. This exercises the section 9.2 path that a library without an AEAD would take |
+| `sign`, `verify` | Ed25519 |
+| `kex_*` | X25519 and ML-KEM-768 from `core/crypto-ext` |
+| `random` | The operating system, through `getrandom` |
+| `key_wrap`, `key_unwrap` | `aead_seal` under a key-encryption key |
+
+Replacing it means writing `core/provider-<lib>`, assigning real suite IDs in `docs/PROTOCOL.md`, section 4, and regenerating `tests/conformance`.
+
 ## Needs outside the library
 
 These are not payload cryptography, but they are still cryptographic code outside the library. They need the same approval as the fill-in block's `RULES` line.

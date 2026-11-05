@@ -1,12 +1,13 @@
 // Drives clients/web-react in a headless browser, through its automation IDs, and speaks
 // the same CLI contract as every other client (docs/CLIENT-ADAPTER.md), so interop.py can
-// treat a browser like a command.
+// treat a browser like a command. `conformance <files>` runs the vectors in the browser.
 //
 //   driver.mjs enroll --server <url> --ca <hex file> --data <dir> --token <token>
 //   driver.mjs call   --server <url> --ca <hex file> --data <dir> --user <id> --peer <id> [--records N] [--relay-only]
 //   driver.mjs answer --server <url> --ca <hex file> --data <dir> --user <id> [--relay-only] [--wait-ms N]
 
-import { createReadStream, existsSync, readFileSync } from "node:fs";
+import { createReadStream, existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { createServer } from "node:http";
 import { createHash } from "node:crypto";
 import path from "node:path";
@@ -43,14 +44,58 @@ function serve(port) {
   });
 }
 
+async function conformance(files) {
+  const work = mkdtempSync(path.join(tmpdir(), "qalqon-conformance-"));
+  const site = await serve(39271);
+  const context = await chromium.launchPersistentContext(work, { headless: true });
+  let failed = 0;
+  try {
+    const page = await context.newPage();
+    await page.goto("http://127.0.0.1:39271/");
+    for (const file of files) {
+      await page.getByTestId("qalqon-conformance-input").fill(readFileSync(file, "utf8"));
+      await page.getByTestId("qalqon-conformance-result").evaluate((e) => (e.textContent = ""));
+      await page.getByTestId("qalqon-conformance-run").click();
+      await page.waitForFunction(
+        () => document.querySelector('[data-testid="qalqon-conformance-result"]').textContent !== "" ||
+          document.querySelector('[data-testid="qalqon-app-status"]').textContent.startsWith("error"),
+        null,
+        { timeout: 60000 },
+      );
+      const text = await page.getByTestId("qalqon-conformance-result").textContent();
+      if (!text) {
+        throw new Error(await page.getByTestId("qalqon-app-status").textContent());
+      }
+      const report = JSON.parse(text);
+      console.log(`${path.basename(file)}: ${report.passed} passed, ${report.failed.length} failed`);
+      if (report.failed.length > 0 || report.passed === 0) {
+        console.error(report.failed.join("\n"));
+        failed++;
+      }
+    }
+  } finally {
+    await context.close();
+    site.close();
+    rmSync(work, { recursive: true, force: true });
+  }
+  process.exit(failed === 0 ? 0 : 1);
+}
+
 async function main() {
+  if (mode === "conformance") {
+    return conformance(args.slice(1));
+  }
   const data = flag("--data");
   const server = flag("--server");
   const ca = readFileSync(flag("--ca"), "utf8").trim();
   // IndexedDB belongs to an origin, so the same profile always gets the same port.
   const port = 20000 + (createHash("sha256").update(data).digest().readUInt16BE(0) % 20000);
   const site = await serve(port);
-  const context = await chromium.launchPersistentContext(path.join(data, "browser"), { headless: true });
+  // Headless Chromium hides local addresses behind mDNS names, which nothing resolves here.
+  const context = await chromium.launchPersistentContext(path.join(data, "browser"), {
+    headless: true,
+    args: ["--disable-features=WebRtcHideLocalIpsWithMdns"],
+  });
   const page = await context.newPage();
   const problems = [];
   page.on("pageerror", (e) => problems.push(String(e)));

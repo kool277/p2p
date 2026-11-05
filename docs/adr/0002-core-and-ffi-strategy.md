@@ -1,6 +1,6 @@
 # ADR-0002: Core and FFI strategy
 
-- **Status:** Proposed. Needs owner approval. Parts 2 and 6 also depend on the library facts.
+- **Status:** Proposed, and implemented provisionally. The owner asked to proceed without answering, so this can still change. Parts 2 and 6 also depend on the library facts.
 - **Date:** 2026-11-05
 
 ## Context
@@ -45,6 +45,8 @@ This ADR also adds `core/provider-testonly`, built from audited public crates. I
 - `qalqon_abi_version()` and `qalqon_build_id()` let a binding detect a mismatched library at load time.
 - Keys never cross the boundary as bytes, only as handles. This also covers the zeroization risk in managed runtimes.
 
+**Refinement while implementing:** structured values cross the C ABI as JSON text, the same encoding the sidecar uses. Scalars and `bytes` stay native, and handles stay opaque. Each record and variant as a C struct would need an owned and a borrowed form and a free function, and every binding would then decode that layout. With JSON, a binding needs one decoder, which it needs for the sidecar anyway, and `qalqon_json_get_string` and `qalqon_json_get_u64` serve a C program with no parser. The cost is parsing on calls that carry records, and those are setup calls. `channel.send` and `channel.receive` take raw bytes. **This is a stop-and-ask choice in the build prompt, so please confirm it.**
+
 ### 5. The server core uses the same polling model
 
 The Host SPI's stores cannot be callbacks, because rule §2 forbids callbacks that hold the GIL or the JVM, and blocking store calls would stall event-loop hosts such as Node. `server-core` instead returns effects: "send this frame", "get this user", "append this audit row". The host performs each one and reports the result with `completeEffect`. See `docs/HOST-SPI.md`. This suits async hosts and works unchanged over the sidecar.
@@ -55,7 +57,13 @@ No folder is assigned for DPAPI, CNG, Secret Service, Keychain, Secure Enclave, 
 
 This adds folders to the layout and needs one exception to the `unsafe` rule in §8, because several OS key APIs are only reachable through `unsafe` calls. Those crates would join `core/ffi` and `core/provider-<lib>` as the allowed locations, with each block justified.
 
-### 7. Delivery paths
+Built so far: `core/keystore-file` for mounted secrets, and `core/keystore-webcrypto` for browsers. Neither needs `unsafe`. The OS stores are not built, so on a desktop `osDefault` currently means the file store, which `docs/COMPLIANCE.md` records as a gap.
+
+### 7. The layers added while implementing
+
+`core/qalqon-signal` holds the client as a sans-I/O state machine, so a native SDK and a browser run the same logic and differ only in who answers its transport commands. `core/qalqon-sdk` adds threads, sockets and blocking calls on top. `core/qalqon-api` holds the API's types, generated from the IDL.
+
+### 8. Delivery paths
 
 | Path | Mechanism | Notes |
 | --- | --- | --- |
@@ -68,7 +76,7 @@ This adds folders to the layout and needs one exception to the `unsafe` rule in 
 
 - The SDK API contains additions the build prompt did not list, because the listed methods alone cannot run a session. They are named in `docs/SDK-API.md`.
 - Polling adds a little latency compared with direct callbacks, which is measured against the Phase 2 budgets.
-- Layout additions: `core/provider-testonly/` and `core/keystore-<platform>/`.
+- Layout additions: `core/provider-testonly/`, `core/keystore-<platform>/`, `core/qalqon-sdk/`, `core/qalqon-api/` and `core/qalqon-conformance/`.
 
 ## Alternatives rejected
 

@@ -12,5 +12,8 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 crypto-provider = { workspace = true }
 
+[target.'cfg(target_os = "linux")'.dependencies]
+rustix = { version = "1", features = ["net", "process"] }
+
 [lints]
 workspace = true

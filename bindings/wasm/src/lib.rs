@@ -46,15 +46,24 @@ impl Identity {
     /// Creates a new identity, and returns it with its wrapped form for storage.
     #[wasm_bindgen(js_name = create)]
     pub async fn create(wrapping_key: CryptoKey) -> Result<CreatedIdentity, JsValue> {
-        let (key, wrapped) = keystore_webcrypto::create_identity(provider().as_ref(), &wrapping_key).await?;
-        Ok(CreatedIdentity { identity: Some(Identity { key: Arc::from(key) }), wrapped })
+        let (key, wrapped) =
+            keystore_webcrypto::create_identity(provider().as_ref(), &wrapping_key).await?;
+        Ok(CreatedIdentity {
+            identity: Some(Identity {
+                key: Arc::from(key),
+            }),
+            wrapped,
+        })
     }
 
     /// Opens a stored identity.
     #[wasm_bindgen(js_name = open)]
     pub async fn open(wrapping_key: CryptoKey, wrapped: Vec<u8>) -> Result<Identity, JsValue> {
-        let key = keystore_webcrypto::open_identity(provider().as_ref(), &wrapping_key, &wrapped).await?;
-        Ok(Identity { key: Arc::from(key) })
+        let key =
+            keystore_webcrypto::open_identity(provider().as_ref(), &wrapping_key, &wrapped).await?;
+        Ok(Identity {
+            key: Arc::from(key),
+        })
     }
 }
 
@@ -90,7 +99,8 @@ pub async fn new_wrapping_key() -> Result<CryptoKey, JsValue> {
 #[wasm_bindgen(js_name = conformanceRun)]
 pub fn conformance_run(vectors: &str) -> String {
     let report = qalqon_conformance::run_file(vectors);
-    json!({ "passed": report.passed, "failed": report.failed, "provider": provider().name() }).to_string()
+    json!({ "passed": report.passed, "failed": report.failed, "provider": provider().name() })
+        .to_string()
 }
 
 /// The name of the crypto provider in this build. A test-only build says so.
@@ -121,7 +131,12 @@ impl Client {
     /// Creates a client. `config` is a `SessionConfig` as JSON, `chain` is this device's
     /// certificate chain if it has one, and `saved` is what `takeStateToSave` last gave.
     #[wasm_bindgen(constructor)]
-    pub fn new(config: &str, identity: &Identity, chain: Option<Vec<u8>>, saved: Option<String>) -> Result<Client, JsValue> {
+    pub fn new(
+        config: &str,
+        identity: &Identity,
+        chain: Option<Vec<u8>>,
+        saved: Option<String>,
+    ) -> Result<Client, JsValue> {
         let config: api::SessionConfig = parse(config, "SessionConfig")?;
         let saved: SavedState = match saved {
             Some(text) => parse(&text, "the saved state")?,
@@ -134,8 +149,12 @@ impl Client {
                 ca_bundle: config.ca_bundle,
                 identity: identity.key.clone(),
                 chain,
-                relay_policy: config.relay_policy.unwrap_or(api::RelayPolicy::PreferDirect),
-                identity_change_policy: config.identity_change_policy.unwrap_or(api::IdentityChangePolicy::Block),
+                relay_policy: config
+                    .relay_policy
+                    .unwrap_or(api::RelayPolicy::PreferDirect),
+                identity_change_policy: config
+                    .identity_change_policy
+                    .unwrap_or(api::IdentityChangePolicy::Block),
                 revocation_grace_ms: config.revocation_grace_ms.unwrap_or(72 * 60 * 60 * 1000),
                 saved,
                 limits: Limits::default(),
@@ -169,13 +188,17 @@ impl Client {
     /// The next transport command, as JSON. Frames in it are base64.
     #[wasm_bindgen(js_name = pollCommand)]
     pub fn poll_command(&mut self) -> Option<String> {
-        self.core.poll_command().and_then(|c| serde_json::to_string(&c).ok())
+        self.core
+            .poll_command()
+            .and_then(|c| serde_json::to_string(&c).ok())
     }
 
     /// The next event, as JSON.
     #[wasm_bindgen(js_name = pollEvent)]
     pub fn poll_event(&mut self) -> Option<String> {
-        self.core.poll_event().and_then(|e| serde_json::to_string(&e).ok())
+        self.core
+            .poll_event()
+            .and_then(|e| serde_json::to_string(&e).ok())
     }
 
     /// `linkOpened`.
@@ -229,12 +252,16 @@ impl Client {
     /// `rejectChannel`.
     #[wasm_bindgen(js_name = rejectChannel)]
     pub fn reject_channel(&mut self, request_id: &str) -> Result<(), JsValue> {
-        self.core.reject_channel(now(), request_id).map_err(api_error)
+        self.core
+            .reject_channel(now(), request_id)
+            .map_err(api_error)
     }
 
     /// `channel.send`.
     pub fn send(&mut self, channel: f64, payload: &[u8]) -> Result<(), JsValue> {
-        self.core.send(now(), channel as u64, payload).map_err(api_error)
+        self.core
+            .send(now(), channel as u64, payload)
+            .map_err(api_error)
     }
 
     /// `channel.receive`, without waiting.
@@ -257,9 +284,16 @@ impl Client {
 
     /// `verifyPeer`, as JSON.
     #[wasm_bindgen(js_name = verifyPeer)]
-    pub fn verify_peer(&mut self, peer: &str, safety_number: Option<String>) -> Result<String, JsValue> {
+    pub fn verify_peer(
+        &mut self,
+        peer: &str,
+        safety_number: Option<String>,
+    ) -> Result<String, JsValue> {
         let peer: api::PeerRef = parse(peer, "PeerRef")?;
-        let identity = self.core.verify_peer(now(), &peer, safety_number.as_deref()).map_err(api_error)?;
+        let identity = self
+            .core
+            .verify_peer(now(), &peer, safety_number.as_deref())
+            .map_err(api_error)?;
         serde_json::to_string(&identity).map_err(|_| api_error(api::ErrorKind::Internal))
     }
 
@@ -286,7 +320,9 @@ impl Client {
     /// What to store, if anything has changed. Holds no key material.
     #[wasm_bindgen(js_name = takeStateToSave)]
     pub fn take_state_to_save(&mut self) -> Option<String> {
-        self.core.take_state_to_save().and_then(|s| serde_json::to_string(&s).ok())
+        self.core
+            .take_state_to_save()
+            .and_then(|s| serde_json::to_string(&s).ok())
     }
 
     /// Moves everything sessions have produced into commands and events.

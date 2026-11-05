@@ -1,0 +1,11 @@
+name: {{name}}
+kind: binding
+language: python
+delivery: ffi
+targets: [linux-x64]
+depends_on: [bindings/c]
+toolchain: { python3: ">=3.10" }
+build:
+  - cargo build -q -p qalqon-ffi
+conformance: "python3 bindings/{{name}}/conformance.py tests/conformance/testonly/*.json"
+owners: [unowned]

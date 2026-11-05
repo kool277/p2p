@@ -102,93 +102,47 @@ function openWebSocket(linkId, url) {
   };
 }
 
-// A direct path between two browsers. One blob per side, with ICE gathered up front. A
-// native peer offers TCP candidates here instead, which a browser cannot dial, so it
-// reports the link closed and the core falls back to the relay.
+// A direct path between two browsers. WebRTC does not exist inside a Worker, so the page owns
+// the RTCPeerConnection (see index.js), and this side passes it ciphertext and connectivity
+// data, never keys or plaintext. A native peer offers TCP candidates here instead, which a
+// browser cannot dial, so the link closes and the core falls back to the relay.
 function openPeerLink(linkId, initiator) {
-  const connection = new RTCPeerConnection({ iceServers: [] });
-  const link = {
-    send: () => {},
-    close: () => connection.close(),
-    onSignal: async (blob) => {
-      const signal = JSON.parse(new TextDecoder().decode(blob));
-      if (!signal.sdp) {
-        closePeerLink();
-        return;
-      }
-      await connection.setRemoteDescription(signal.sdp);
-      if (!initiator) {
-        await connection.setLocalDescription(await connection.createAnswer());
-        await gathered(connection);
-        client.signalReceived(linkId, new TextEncoder().encode(JSON.stringify({ sdp: connection.localDescription })));
-        pump();
-      }
-    },
-  };
-  links.set(linkId, link);
-  const closePeerLink = () => {
-    if (links.delete(linkId)) {
-      connection.close();
-      client.linkClosed(linkId);
-      pump();
-    }
-  };
-  const useChannel = (channel) => {
-    channel.binaryType = "arraybuffer";
-    link.send = (bytes) => channel.send(bytes);
-    channel.onopen = () => {
-      client.linkOpened(linkId, DATA_CHANNEL_CAPS);
-      pump();
-    };
-    channel.onmessage = (event) => {
-      client.frameReceived(linkId, new Uint8Array(event.data));
-      pump();
-    };
-    channel.onclose = closePeerLink;
-  };
-  if (initiator) {
-    useChannel(connection.createDataChannel("qalqon"));
-    connection
-      .createOffer()
-      .then((offer) => connection.setLocalDescription(offer))
-      .then(() => gathered(connection))
-      .then(() => {
-        client.signalReceived(linkId, new TextEncoder().encode(JSON.stringify({ sdp: connection.localDescription })));
-        pump();
-      })
-      .catch(closePeerLink);
-  } else {
-    connection.ondatachannel = (event) => useChannel(event.channel);
-  }
+  links.set(linkId, {
+    send: (bytes) => self.postMessage({ rtc: "send", linkId, bytes }, [bytes.buffer]),
+    close: () => self.postMessage({ rtc: "close", linkId }),
+    onSignal: (blob) => self.postMessage({ rtc: "signal", linkId, blob }),
+  });
+  self.postMessage({ rtc: "open", linkId, initiator });
 }
 
-function gathered(connection) {
-  if (connection.iceGatheringState === "complete") {
-    return Promise.resolve();
+function onRtcEvent({ event, linkId, bytes, blob }) {
+  if (!client) {
+    return;
   }
-  return new Promise((resolve) => {
-    connection.addEventListener("icegatheringstatechange", () => {
-      if (connection.iceGatheringState === "complete") {
-        resolve();
+  switch (event) {
+    case "opened":
+      client.linkOpened(linkId, DATA_CHANNEL_CAPS);
+      break;
+    case "frame":
+      client.frameReceived(linkId, bytes);
+      break;
+    case "signal":
+      client.signalReceived(linkId, blob);
+      break;
+    case "closed":
+      if (links.delete(linkId)) {
+        client.linkClosed(linkId);
       }
-    });
-    setTimeout(resolve, 1000);
-  });
+      break;
+  }
+  pump();
 }
 
 function perform(command) {
   switch (command.type) {
     case "openLink":
       if (command.kind === "peer") {
-        if (typeof RTCPeerConnection === "undefined") {
-          // Workers have no WebRTC in most browsers, so this path falls back to the relay.
-          queueMicrotask(() => {
-            client.linkClosed(command.linkId);
-            pump();
-          });
-        } else {
-          openPeerLink(command.linkId, command.initiator);
-        }
+        openPeerLink(command.linkId, command.initiator);
       } else {
         openWebSocket(command.linkId, command.url);
       }
@@ -419,7 +373,11 @@ const methods = {
   },
 };
 
-self.onmessage = async ({ data: { id, method, params } }) => {
+self.onmessage = async ({ data: { id, method, params, rtcEvent } }) => {
+  if (rtcEvent) {
+    onRtcEvent(rtcEvent);
+    return;
+  }
   try {
     const result = await methods[method](params ?? {});
     self.postMessage({ id, result });

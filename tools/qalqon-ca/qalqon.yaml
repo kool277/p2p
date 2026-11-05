@@ -1,0 +1,10 @@
+name: qalqon-ca
+kind: tool
+language: rust
+delivery: rust
+targets: [linux-x64]
+depends_on: [core/qalqon-core, core/provider-testonly, core/keystore-file]
+toolchain: { cargo: ">=1.85" }
+build:
+  - cargo build -q -p qalqon-ca
+owners: [core-team]

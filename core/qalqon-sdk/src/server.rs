@@ -11,11 +11,15 @@ use std::sync::Arc;
 use std::time::Duration;
 
 fn map_code(code: qalqon_core::ErrorCode) -> ApiError {
-    ErrorKind::from_code(code.code()).unwrap_or(ErrorKind::Internal).into()
+    ErrorKind::from_code(code.code())
+        .unwrap_or(ErrorKind::Internal)
+        .into()
 }
 
 fn open_signing(p: &dyn CryptoProvider, reference: &str) -> Result<Arc<dyn SigningKey>, ErrorKind> {
-    let (location, label) = reference.split_once('#').ok_or(ErrorKind::InvalidArgument)?;
+    let (location, label) = reference
+        .split_once('#')
+        .ok_or(ErrorKind::InvalidArgument)?;
     let store = open_key_store(location)?;
     store
         .signing_key(p, label, true)
@@ -24,9 +28,16 @@ fn open_signing(p: &dyn CryptoProvider, reference: &str) -> Result<Arc<dyn Signi
         .ok_or(ErrorKind::KeyStoreUnavailable)
 }
 
-fn open_secret(p: &dyn CryptoProvider, reference: &str) -> Result<crypto_provider::Secret, ErrorKind> {
-    let (location, label) = reference.split_once('#').ok_or(ErrorKind::InvalidArgument)?;
-    open_key_store(location)?.secret(p, label, 32).map_err(|_| ErrorKind::KeyStoreUnavailable)
+fn open_secret(
+    p: &dyn CryptoProvider,
+    reference: &str,
+) -> Result<crypto_provider::Secret, ErrorKind> {
+    let (location, label) = reference
+        .split_once('#')
+        .ok_or(ErrorKind::InvalidArgument)?;
+    open_key_store(location)?
+        .secret(p, label, 32)
+        .map_err(|_| ErrorKind::KeyStoreUnavailable)
 }
 
 /// `createServerCore`. The core opens every key from its reference, so the host never
@@ -36,9 +47,10 @@ pub fn create_server_core(config: api::ServerConfig) -> Result<ServerCore, ApiEr
     let p = provider.as_ref();
     let identity = open_signing(p, &config.identity_key_ref)?;
     let issuing = match (&config.issuing_key_ref, &config.issuing_certificate) {
-        (Some(reference), Some(certificate)) => {
-            Some(IssuingCa { key: open_signing(p, reference)?, certificate: certificate.clone() })
-        }
+        (Some(reference), Some(certificate)) => Some(IssuingCa {
+            key: open_signing(p, reference)?,
+            certificate: certificate.clone(),
+        }),
         (None, None) => None,
         _ => return Err(ErrorKind::InvalidArgument.into()),
     };
@@ -63,7 +75,9 @@ pub fn create_server_core(config: api::ServerConfig) -> Result<ServerCore, ApiEr
         provider,
     })
     .map_err(map_code)?;
-    Ok(ServerCore { core: Arc::new(core) })
+    Ok(ServerCore {
+        core: Arc::new(core),
+    })
 }
 
 /// The server side of the protocol, embedded by every host. See `docs/HOST-SPI.md`.
@@ -123,24 +137,48 @@ impl ServerCore {
 
     /// `serverCore.pollEffect`.
     pub fn poll_effect(&self, timeout_ms: u32) -> Result<Option<api::Effect>, ApiError> {
-        let effect = self.core.poll_effect(Duration::from_millis(u64::from(timeout_ms))).map_err(map_code)?;
+        let effect = self
+            .core
+            .poll_effect(Duration::from_millis(u64::from(timeout_ms)))
+            .map_err(map_code)?;
         Ok(effect.map(|effect| match effect {
             Effect::SendFrame { conn_id, frame } => api::Effect::SendFrame { conn_id, frame },
-            Effect::CloseConnection { conn_id, code } => api::Effect::CloseConnection { conn_id, code },
-            Effect::Store { effect_id, store, operation, key, record } => api::Effect::Store {
+            Effect::CloseConnection { conn_id, code } => {
+                api::Effect::CloseConnection { conn_id, code }
+            }
+            Effect::Store {
+                effect_id,
+                store,
+                operation,
+                key,
+                record,
+            } => api::Effect::Store {
                 effect_id,
                 store: store_kind(store),
                 operation: store_operation(operation),
                 key,
                 record,
             },
-            Effect::Alarm { severity: s, summary } => api::Effect::Alarm { severity: severity(s), summary },
+            Effect::Alarm {
+                severity: s,
+                summary,
+            } => api::Effect::Alarm {
+                severity: severity(s),
+                summary,
+            },
         }))
     }
 
     /// `serverCore.completeEffect`.
-    pub fn complete_effect(&self, effect_id: u64, status: u32, record: Option<Vec<u8>>) -> Result<(), ApiError> {
-        self.core.complete_effect(effect_id, status, record).map_err(map_code)
+    pub fn complete_effect(
+        &self,
+        effect_id: u64,
+        status: u32,
+        record: Option<Vec<u8>>,
+    ) -> Result<(), ApiError> {
+        self.core
+            .complete_effect(effect_id, status, record)
+            .map_err(map_code)
     }
 
     /// `serverCore.adminCall`.
@@ -151,12 +189,18 @@ impl ServerCore {
     /// `serverCore.health`.
     pub fn health(&self) -> Result<api::HealthSnapshot, ApiError> {
         let health = self.core.health();
-        Ok(api::HealthSnapshot { live: health.live, ready: health.ready, detail: health.detail })
+        Ok(api::HealthSnapshot {
+            live: health.live,
+            ready: health.ready,
+            detail: health.detail,
+        })
     }
 
     /// `serverCore.metrics`.
     pub fn metrics(&self) -> Result<api::MetricsSnapshot, ApiError> {
-        Ok(api::MetricsSnapshot { text: self.core.metrics() })
+        Ok(api::MetricsSnapshot {
+            text: self.core.metrics(),
+        })
     }
 
     /// `serverCore.shutdown`.

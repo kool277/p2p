@@ -95,24 +95,35 @@ fn compare_positions(
 #[ignore = "timing is noisy on a shared machine. Run on demand."]
 fn tag_comparison_does_not_depend_on_where_the_bytes_differ() {
     let expected = vec![0x5Au8; 32];
-    let t = compare_positions(&expected, 0, 31, 200_000, |probe| drop(black_box(ct_eq(&expected, black_box(probe)))));
+    let t = compare_positions(&expected, 0, 31, 200_000, |probe| {
+        black_box(ct_eq(&expected, black_box(probe)));
+    });
     println!("ct_eq: |t| = {:.2} (threshold {T_THRESHOLD})", t.abs());
-    assert!(t.abs() < T_THRESHOLD, "ct_eq leaks where the first difference is: t = {t}");
+    assert!(
+        t.abs() < T_THRESHOLD,
+        "ct_eq leaks where the first difference is: t = {t}"
+    );
 }
 
 #[test]
 #[ignore = "timing is noisy on a shared machine. Run on demand."]
 fn a_failed_open_does_not_depend_on_where_the_tag_differs() {
     let p = TestOnlyProvider::new();
-    let key = AeadKey { enc: secret(&[1; 32]), mac: secret(&[2; 32]) };
+    let key = AeadKey {
+        enc: secret(&[1; 32]),
+        mac: secret(&[2; 32]),
+    };
     let nonce = [0u8; 12];
     let sealed = p.aead_seal(&key, &nonce, b"aad", &[0u8; 256]).unwrap();
     let tag_start = sealed.len() - 32;
     let t = compare_positions(&sealed, tag_start, sealed.len() - 1, 20_000, |probe| {
-        drop(black_box(p.aead_open(&key, &nonce, b"aad", black_box(probe)).is_err()))
+        black_box(p.aead_open(&key, &nonce, b"aad", black_box(probe)).is_err());
     });
     println!("aead_open: |t| = {:.2} (threshold {T_THRESHOLD})", t.abs());
-    assert!(t.abs() < T_THRESHOLD, "aead_open leaks where the tag differs: t = {t}");
+    assert!(
+        t.abs() < T_THRESHOLD,
+        "aead_open leaks where the tag differs: t = {t}"
+    );
 }
 
 /// A control: two identical classes must not be told apart, or a failure above would
@@ -121,9 +132,17 @@ fn a_failed_open_does_not_depend_on_where_the_tag_differs() {
 #[ignore = "timing is noisy on a shared machine. Run on demand."]
 fn the_harness_does_not_invent_a_leak() {
     let expected = vec![0x5Au8; 32];
-    let t = compare_positions(&expected, 7, 7, 200_000, |probe| drop(black_box(ct_eq(&expected, black_box(probe)))));
-    println!("identical classes: |t| = {:.2} (threshold {T_THRESHOLD})", t.abs());
-    assert!(t.abs() < T_THRESHOLD, "the harness reports a leak between identical inputs: t = {t}");
+    let t = compare_positions(&expected, 7, 7, 200_000, |probe| {
+        black_box(ct_eq(&expected, black_box(probe)));
+    });
+    println!(
+        "identical classes: |t| = {:.2} (threshold {T_THRESHOLD})",
+        t.abs()
+    );
+    assert!(
+        t.abs() < T_THRESHOLD,
+        "the harness reports a leak between identical inputs: t = {t}"
+    );
 }
 
 /// A control: the harness must see an obvious leak, or a pass above would mean nothing.
@@ -139,7 +158,12 @@ fn the_harness_detects_a_naive_comparison() {
         true
     }
     let expected = vec![0x5Au8; 4096];
-    let t = compare_positions(&expected, 0, 4095, 20_000, |probe| drop(black_box(naive(&expected, black_box(probe)))));
+    let t = compare_positions(&expected, 0, 4095, 20_000, |probe| {
+        black_box(naive(&expected, black_box(probe)));
+    });
     println!("naive comparison: |t| = {:.2}", t.abs());
-    assert!(t.abs() > T_THRESHOLD, "the harness cannot see even a naive comparison");
+    assert!(
+        t.abs() > T_THRESHOLD,
+        "the harness cannot see even a naive comparison"
+    );
 }

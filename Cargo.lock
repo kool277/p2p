@@ -1172,6 +1172,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "qalqon-cli"
+version = "0.0.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sha2",
+]
+
+[[package]]
 name = "qalqon-cli-rust"
 version = "0.0.0"
 dependencies = [
@@ -1303,6 +1313,7 @@ version = "0.0.0"
 dependencies = [
  "crypto-provider",
  "qalqon-sdk",
+ "rustix",
  "serde",
  "serde_json",
 ]

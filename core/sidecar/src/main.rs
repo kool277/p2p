@@ -4,13 +4,14 @@
 //! against malware running as that user.
 //!
 //! ```text
-//! qalqond serve --socket <path>            a Unix socket, directory mode 0700, checked with SO_PEERCRED
+//! qalqond serve --socket <path>            a Unix socket, directory mode 0700, checked with SO_PEERCRED on Linux
 //! qalqond serve --tcp 127.0.0.1:0 --token-file <path>   loopback TCP with a per-launch token
 //! qalqond client <socket>                  JSON lines on stdin and stdout, for shell scripts
 //! qalqond call <socket> <method> <json>    one call. Handles die with the connection
 //! ```
 #![forbid(unsafe_code)]
 
+#[rustfmt::skip]
 mod generated;
 
 use qalqon_sdk::api;
@@ -29,7 +30,8 @@ const MAX_FRAME: usize = 16 * 1024 * 1024;
 const ABI_MAJOR: u64 = 0;
 
 fn arg<T: DeserializeOwned>(params: &Value, name: &str) -> Result<T, ApiError> {
-    serde_json::from_value(params.get(name).cloned().unwrap_or(Value::Null)).map_err(|_| ErrorKind::InvalidArgument.into())
+    serde_json::from_value(params.get(name).cloned().unwrap_or(Value::Null))
+        .map_err(|_| ErrorKind::InvalidArgument.into())
 }
 
 fn text_arg(params: &Value, name: &str) -> Result<String, ApiError> {
@@ -43,7 +45,8 @@ fn bytes_arg(params: &Value, name: &str) -> Result<Vec<u8>, ApiError> {
 
 fn optional_bytes_arg(params: &Value, name: &str) -> Result<Option<Vec<u8>>, ApiError> {
     let text: Option<String> = arg(params, name)?;
-    text.map(|t| api::b64::decode(&t).ok_or_else(|| ErrorKind::InvalidArgument.into())).transpose()
+    text.map(|t| api::b64::decode(&t).ok_or_else(|| ErrorKind::InvalidArgument.into()))
+        .transpose()
 }
 
 fn to_value<T: serde::Serialize>(value: T) -> Result<Value, ApiError> {
@@ -95,19 +98,34 @@ impl Handles {
     }
 
     fn session(&self, params: &Value) -> Result<qalqon_sdk::Session, ApiError> {
-        self.sessions.get(&handle_of(params)?).cloned().ok_or_else(|| ErrorKind::InvalidArgument.into())
+        self.sessions
+            .get(&handle_of(params)?)
+            .cloned()
+            .ok_or_else(|| ErrorKind::InvalidArgument.into())
     }
 
     fn channel(&self, params: &Value) -> Result<qalqon_sdk::Channel, ApiError> {
-        self.channels.get(&handle_of(params)?).cloned().ok_or_else(|| ErrorKind::InvalidArgument.into())
+        self.channels
+            .get(&handle_of(params)?)
+            .cloned()
+            .ok_or_else(|| ErrorKind::InvalidArgument.into())
     }
 
-    fn external_transport(&self, params: &Value) -> Result<qalqon_sdk::ExternalTransport, ApiError> {
-        self.transports.get(&handle_of(params)?).cloned().ok_or_else(|| ErrorKind::InvalidArgument.into())
+    fn external_transport(
+        &self,
+        params: &Value,
+    ) -> Result<qalqon_sdk::ExternalTransport, ApiError> {
+        self.transports
+            .get(&handle_of(params)?)
+            .cloned()
+            .ok_or_else(|| ErrorKind::InvalidArgument.into())
     }
 
     fn server_core(&self, params: &Value) -> Result<qalqon_sdk::ServerCore, ApiError> {
-        self.servers.get(&handle_of(params)?).cloned().ok_or_else(|| ErrorKind::InvalidArgument.into())
+        self.servers
+            .get(&handle_of(params)?)
+            .cloned()
+            .ok_or_else(|| ErrorKind::InvalidArgument.into())
     }
 }
 
@@ -128,16 +146,22 @@ fn read_frame(stream: &mut impl Read) -> io::Result<Option<Value>> {
     }
     let length = u32::from_be_bytes(header) as usize;
     if length > MAX_FRAME {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, "a frame is too long"));
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "a frame is too long",
+        ));
     }
     let mut body = vec![0u8; length];
     stream.read_exact(&mut body)?;
-    serde_json::from_slice(&body).map(Some).map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "a frame is not JSON"))
+    serde_json::from_slice(&body)
+        .map(Some)
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "a frame is not JSON"))
 }
 
 fn write_frame(stream: &mut impl Write, value: &Value) -> io::Result<()> {
     let body = serde_json::to_vec(value)?;
-    let length = u32::try_from(body.len()).map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "too long"))?;
+    let length = u32::try_from(body.len())
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "too long"))?;
     stream.write_all(&length.to_be_bytes())?;
     stream.write_all(&body)?;
     stream.flush()
@@ -176,7 +200,9 @@ fn check_hello(request: &Value, token: Option<&[u8]>) -> Result<Value, Value> {
 }
 
 fn serve_connection(mut stream: impl Read + Write, token: Option<&[u8]>) -> io::Result<()> {
-    let Some(first) = read_frame(&mut stream)? else { return Ok(()) };
+    let Some(first) = read_frame(&mut stream)? else {
+        return Ok(());
+    };
     match check_hello(&first, token) {
         Ok(reply) => write_frame(&mut stream, &reply)?,
         Err(reply) => {
@@ -199,12 +225,23 @@ fn serve_connection(mut stream: impl Read + Write, token: Option<&[u8]>) -> io::
     Ok(())
 }
 
-/// `SO_PEERCRED` is the check in ADR-0004. It takes a platform call that std does not
-/// expose without `unsafe`, and this crate forbids `unsafe`. The socket's directory has
-/// mode `0700`, so only the same user can reach the socket, which is the same guarantee on
-/// every Unix. The explicit UID check is a recorded gap in `docs/COMPLIANCE.md`.
+/// The check in ADR-0004: the peer's UID must match the daemon's. On other Unix systems,
+/// the socket's `0700` directory gives the same guarantee, and `getpeereid` is a recorded gap.
+#[cfg(target_os = "linux")]
+fn peer_is_same_user(stream: &UnixStream) -> bool {
+    use rustix::net::sockopt::socket_peercred;
+    socket_peercred(stream).is_ok_and(|credentials| credentials.uid == rustix::process::getuid())
+}
+
+#[cfg(not(target_os = "linux"))]
+fn peer_is_same_user(_: &UnixStream) -> bool {
+    true
+}
+
 fn serve_unix(path: &Path) -> io::Result<()> {
-    let dir = path.parent().ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "the socket needs a directory"))?;
+    let dir = path.parent().ok_or_else(|| {
+        io::Error::new(io::ErrorKind::InvalidInput, "the socket needs a directory")
+    })?;
     let mut builder = std::fs::DirBuilder::new();
     builder.recursive(true).mode(0o700);
     builder.create(dir)?;
@@ -217,8 +254,15 @@ fn serve_unix(path: &Path) -> io::Result<()> {
     }
     let _ = std::fs::remove_file(path);
     let listener = UnixListener::bind(path)?;
-    eprintln!("qalqond listening on {} (provider: {})", path.display(), qalqon_sdk::provider_name());
+    eprintln!(
+        "qalqond listening on {} (provider: {})",
+        path.display(),
+        qalqon_sdk::provider_name()
+    );
     for stream in listener.incoming().flatten() {
+        if !peer_is_same_user(&stream) {
+            continue;
+        }
         std::thread::spawn(move || {
             let _ = serve_connection(stream, None);
         });
@@ -229,17 +273,29 @@ fn serve_unix(path: &Path) -> io::Result<()> {
 fn serve_tcp(address: &str, token_file: &Path) -> io::Result<()> {
     let provider = qalqon_sdk::provider();
     let mut random = [0u8; 32];
-    provider.random(&mut random).map_err(|e| io::Error::other(e.to_string()))?;
+    provider
+        .random(&mut random)
+        .map_err(|e| io::Error::other(e.to_string()))?;
     let token = crypto_provider::to_hex(&random);
-    let mut file = std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(token_file)?;
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(token_file)?;
     file.write_all(token.as_bytes())?;
     drop(file);
     let listener = TcpListener::bind(address)?;
     let bound = listener.local_addr()?;
     if !bound.ip().is_loopback() {
-        return Err(io::Error::new(io::ErrorKind::InvalidInput, "qalqond only listens on loopback"));
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "qalqond only listens on loopback",
+        ));
     }
-    eprintln!("qalqond listening on {bound} with its token in {}", token_file.display());
+    eprintln!(
+        "qalqond listening on {bound} with its token in {}",
+        token_file.display()
+    );
     let token = std::sync::Arc::new(token.into_bytes());
     for stream in listener.incoming().flatten() {
         let token = token.clone();
@@ -292,7 +348,9 @@ fn say_hello(stream: &mut Endpoint, client: &str) -> io::Result<()> {
     write_frame(stream, &hello)?;
     let reply = read_frame(stream)?.ok_or(io::ErrorKind::UnexpectedEof)?;
     if reply.get("error").is_some() {
-        return Err(io::Error::other(format!("qalqond refused the connection: {reply}")));
+        return Err(io::Error::other(format!(
+            "qalqond refused the connection: {reply}"
+        )));
     }
     Ok(())
 }
@@ -309,7 +367,8 @@ fn run_client(endpoint: &str) -> io::Result<()> {
         if line.trim().is_empty() {
             continue;
         }
-        let request: Value = serde_json::from_str(&line).map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "a line is not JSON"))?;
+        let request: Value = serde_json::from_str(&line)
+            .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "a line is not JSON"))?;
         write_frame(&mut stream, &request)?;
         let reply = read_frame(&mut stream)?.ok_or(io::ErrorKind::UnexpectedEof)?;
         writeln!(stdout, "{reply}")?;
@@ -321,8 +380,12 @@ fn run_client(endpoint: &str) -> io::Result<()> {
 fn run_call(endpoint: &str, method: &str, params: &str) -> io::Result<i32> {
     let mut stream = connect_endpoint(endpoint)?;
     say_hello(&mut stream, "call/0.1.0")?;
-    let params: Value = serde_json::from_str(params).map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "the parameters are not JSON"))?;
-    write_frame(&mut stream, &json!({ "jsonrpc": "2.0", "id": 1, "method": method, "params": params }))?;
+    let params: Value = serde_json::from_str(params)
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "the parameters are not JSON"))?;
+    write_frame(
+        &mut stream,
+        &json!({ "jsonrpc": "2.0", "id": 1, "method": method, "params": params }),
+    )?;
     let reply = read_frame(&mut stream)?.ok_or(io::ErrorKind::UnexpectedEof)?;
     if let Some(error) = reply.get("error") {
         eprintln!("{error}");
@@ -334,24 +397,43 @@ fn run_call(endpoint: &str, method: &str, params: &str) -> io::Result<i32> {
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let value = |flag: &str| args.iter().position(|a| a == flag).and_then(|i| args.get(i + 1)).cloned();
+    let value = |flag: &str| {
+        args.iter()
+            .position(|a| a == flag)
+            .and_then(|i| args.get(i + 1))
+            .cloned()
+    };
     let outcome = match args.first().map(String::as_str) {
         Some("serve") => match (value("--socket"), value("--tcp"), value("--token-file")) {
             (Some(socket), _, _) => serve_unix(&PathBuf::from(socket)).map(|()| 0),
-            (None, Some(address), Some(token)) => serve_tcp(&address, &PathBuf::from(token)).map(|()| 0),
-            _ => Err(io::Error::new(io::ErrorKind::InvalidInput, "serve needs --socket, or --tcp with --token-file")),
+            (None, Some(address), Some(token)) => {
+                serve_tcp(&address, &PathBuf::from(token)).map(|()| 0)
+            }
+            _ => Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "serve needs --socket, or --tcp with --token-file",
+            )),
         },
         Some("client") => match args.get(1) {
             Some(endpoint) => run_client(endpoint).map(|()| 0),
-            None => Err(io::Error::new(io::ErrorKind::InvalidInput, "client needs a socket")),
+            None => Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "client needs a socket",
+            )),
         },
         Some("call") => match (args.get(1), args.get(2), args.get(3)) {
             (Some(endpoint), Some(method), params) => {
                 run_call(endpoint, method, params.map_or("{}", String::as_str))
             }
-            _ => Err(io::Error::new(io::ErrorKind::InvalidInput, "call needs a socket and a method")),
+            _ => Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "call needs a socket and a method",
+            )),
         },
-        _ => Err(io::Error::new(io::ErrorKind::InvalidInput, "usage: qalqond <serve|client|call> ...")),
+        _ => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "usage: qalqond <serve|client|call> ...",
+        )),
     };
     match outcome {
         Ok(code) => std::process::exit(code),
@@ -368,9 +450,18 @@ mod tests {
 
     #[test]
     fn the_dispatch_table_matches_the_json_rpc_schema() {
-        let text = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../idl/generated/qalqon.jsonrpc.json")).unwrap();
+        let text = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../idl/generated/qalqon.jsonrpc.json"
+        ))
+        .unwrap();
         let schema: Value = serde_json::from_str(&text).unwrap();
-        let in_schema: Vec<&str> = schema["methods"].as_array().unwrap().iter().map(|m| m["name"].as_str().unwrap()).collect();
+        let in_schema: Vec<&str> = schema["methods"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|m| m["name"].as_str().unwrap())
+            .collect();
         assert_eq!(in_schema, generated::METHODS);
     }
 
@@ -381,15 +472,27 @@ mod tests {
         let wrong = json!({ "id": 1, "method": "connect", "params": {} });
         assert!(check_hello(&wrong, None).is_err());
         let abi = json!({ "id": 1, "method": "qalqond.hello", "params": { "abi": 9 } });
-        assert_eq!(check_hello(&abi, None).unwrap_err()["error"]["code"], ErrorKind::Unsupported.code());
+        assert_eq!(
+            check_hello(&abi, None).unwrap_err()["error"]["code"],
+            ErrorKind::Unsupported.code()
+        );
     }
 
     #[test]
     fn a_wrong_token_is_refused() {
         let hello = |token: &str| json!({ "id": 1, "method": "qalqond.hello", "params": { "abi": 0, "token": token } });
         assert!(check_hello(&hello("secret"), Some(b"secret")).is_ok());
-        assert_eq!(check_hello(&hello("guess"), Some(b"secret")).unwrap_err()["error"]["code"], ErrorKind::AccessDenied.code());
-        assert!(check_hello(&json!({ "id": 1, "method": "qalqond.hello", "params": { "abi": 0 } }), Some(b"secret")).is_err());
+        assert_eq!(
+            check_hello(&hello("guess"), Some(b"secret")).unwrap_err()["error"]["code"],
+            ErrorKind::AccessDenied.code()
+        );
+        assert!(
+            check_hello(
+                &json!({ "id": 1, "method": "qalqond.hello", "params": { "abi": 0 } }),
+                Some(b"secret")
+            )
+            .is_err()
+        );
     }
 
     #[test]

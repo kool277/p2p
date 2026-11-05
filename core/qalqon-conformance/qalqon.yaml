@@ -1,0 +1,8 @@
+name: qalqon-conformance
+kind: core
+language: rust
+delivery: rust
+targets: [linux-x64]
+depends_on: [core/provider-testonly, core/qalqon-core, core/qalqon-audit]
+toolchain: { cargo: ">=1.85" }
+owners: [core-team]

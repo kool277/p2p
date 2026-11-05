@@ -2,7 +2,7 @@
 
 `PROTOCOL_VERSION` 0.1, draft v0.
 
-**Status: draft, implemented in `core/qalqon-core` against the test-only provider.** Nothing here has run with the certified library. An AI-assisted review of an earlier version found defects, which are fixed here, but no human cryptographer has reviewed it. The wire format freezes at Phase 2, and major version 0 makes no compatibility promise.
+**Status: draft, implemented in `core/qalqon-core` against the test-only provider.** Nothing here has run with the certified library. An AI-assisted review of an earlier version found defects, which are fixed here, and `formal/` holds a symbolic model of the handshake, but no human cryptographer has reviewed it. The wire format freezes at Phase 2, and major version 0 makes no compatibility promise.
 
 ## 1. Scope
 
@@ -400,7 +400,7 @@ The first byte of a record's plaintext is `inner_type`. The header's `channel_id
 
 `reason` is one of: 0 `normal`, 1 `protocol_error`, 2 `transport_unsupported`, 3 `message_too_large`, 4 `rejected`, 5 `timeout`, 6 `internal_error`.
 
-An application message larger than one record is split into `DATA` fragments. Reassembly is limited to 16 MiB per message and 64 MiB per session by default, and partial messages on unordered channels time out after 30 seconds.
+A channel's messages are numbered from 0 by `message_id`. An application message larger than one record is split into `DATA` fragments. Reassembly is limited to 16 MiB per message and 64 MiB per session by default, and partial messages on unordered channels time out after 30 seconds.
 
 ### 9.7 Authenticated close
 
@@ -592,17 +592,17 @@ An endpoint periodically signs a checkpoint: `Sign(identity, ctx("audit checkpoi
 
 ## 15. Security properties for the formal model
 
-The Tamarin or ProVerif model in `formal/` must prove these, against an attacker who controls the network and the server:
+The ProVerif models in `formal/` check these, against an attacker who controls the network and the server. See `formal/README.md`.
 
 1. **Secrecy** of `i_ap_*` and `r_ap_*`.
 2. **Forward secrecy:** compromising identity keys after a session does not reveal its traffic keys.
 3. **Hybrid secrecy:** secrets hold while any one key agreement component is sound.
 4. **Mutual injective agreement** on the transcript, roles and identities. R reaches it on verifying `XX_FINISH`, and I on opening R's `KEY_CONFIRM`.
-5. **No impersonation from a leaked ephemeral:** learning one session's ephemeral secret does not let an attacker impersonate that party in any other session.
+5. **No impersonation from a leaked ephemeral:** learning one session's ephemeral secret does not let an attacker impersonate that party in any other session. Whoever holds a session's ephemeral can forge that session's `KEY_CONFIRM`, because it is protected only by that session's keys, so item 4's guarantee to I does not hold for a session whose ephemeral leaked. I still knows that R signed the transcript.
 6. **Downgrade resistance:** both sides agree on the version, the suite and I's full offer, including `known_responder`.
 7. **No identity misbinding** and no key compromise impersonation.
 8. **Rekey forward secrecy:** a leak in one epoch does not reveal any epoch whose keys have already been erased. A receiver's retained keys on a lossy transport are not yet erased, so they are excluded for up to 30 seconds.
-9. **Record integrity on strict transports:** an insertion, deletion, replay or reordering is always detected, and truncation is always reported as an unclean closure.
+9. **Record integrity on strict transports:** an insertion, deletion, replay or reordering is always detected, and truncation is always reported as an unclean closure. This one is covered by tests, not by the model.
 10. **Server substitution:** for a user already pinned, a certificate the server obtained for a new device or a changed key cannot establish a channel without triggering `peerIdentityChanged`.
 
 Identity hiding is a design goal but is not one of the required lemmas. I's identity is encrypted under forward-secret keys and sent only after R has authenticated. R's identity is exposed to an active attacker who can reach it with a valid `rendezvous_id`.
@@ -610,6 +610,8 @@ Identity hiding is a design goal but is not one of the required lemmas. I's iden
 ## 16. Test vectors
 
 `tools/vectors` generates deterministic JSON vectors from the Rust reference, with randomness injected, into `tests/conformance`. They cover `HKDF-Expand-Label`, the key schedule, the handshake byte for byte with and without `known_responder`, record seal and open, replay and epoch handling, and negative cases that every binding must reject.
+
+Today's vectors are in `tests/conformance/testonly` and come from the test-only provider.
 
 ## 17. Not in this version
 
@@ -631,4 +633,4 @@ Identity hiding is a design goal but is not one of the required lemmas. I's iden
 | Final `suite_id` values and whether ML-KEM-768 ships in the first release | ADR-0001 |
 | The session sequence in section 3 | The missing diagram |
 | A CRL must fit in one control record, about 4,000 revocations | Whether large deployments need paging. Short certificate validity keeps the list small |
-| Handshake state tables | Written with the formal model in Phase 1 |
+| Handshake state tables | Not written. `core/qalqon-core/src/session.rs` is the only statement of them so far |

@@ -20,7 +20,11 @@ use std::time::{Duration, Instant};
 use tungstenite::stream::MaybeTlsStream;
 use tungstenite::{Message, WebSocket};
 
-const STREAM_CAPS: api::TransportCaps = api::TransportCaps { ordered: true, reliable: true, max_frame_len: 65_553 };
+const STREAM_CAPS: api::TransportCaps = api::TransportCaps {
+    ordered: true,
+    reliable: true,
+    max_frame_len: 65_553,
+};
 const WS_POLL: Duration = Duration::from_millis(2);
 const DIRECT_ACCEPT_WINDOW: Duration = Duration::from_secs(10);
 
@@ -37,19 +41,34 @@ pub(crate) struct LinkTable {
 
 impl LinkTable {
     pub(crate) fn any_open(&self) -> bool {
-        !self.links.lock().unwrap_or_else(|e| e.into_inner()).is_empty()
+        !self
+            .links
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_empty()
     }
 
     fn insert(&self, id: u64, sender: Sender<Outbound>) {
-        self.links.lock().unwrap_or_else(|e| e.into_inner()).insert(id, sender);
+        self.links
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(id, sender);
     }
 
     fn remove(&self, id: u64) {
-        self.links.lock().unwrap_or_else(|e| e.into_inner()).remove(&id);
+        self.links
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&id);
     }
 
     fn send(&self, id: u64, message: Outbound) {
-        if let Some(sender) = self.links.lock().unwrap_or_else(|e| e.into_inner()).get(&id) {
+        if let Some(sender) = self
+            .links
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(&id)
+        {
             let _ = sender.send(message);
         }
     }
@@ -75,26 +94,42 @@ fn report_frame(shared: &Shared, link: u64, frame: &[u8]) {
 /// own waiting on its own thread.
 pub(crate) fn perform(shared: &Arc<Shared>, command: TransportCommand) {
     match command {
-        TransportCommand::OpenLink { link_id, kind, url, initiator } => {
+        TransportCommand::OpenLink {
+            link_id,
+            kind,
+            url,
+            initiator,
+        } => {
             let (sender, receiver) = channel();
             shared.links.insert(link_id, sender);
             let shared = shared.clone();
-            let spawned = std::thread::Builder::new().name(format!("qalqon-link-{link_id}")).spawn(move || match kind {
-                api::LinkKind::Server | api::LinkKind::Relay => {
-                    run_websocket(&shared, link_id, url.unwrap_or_default(), receiver);
-                }
-                api::LinkKind::Peer if initiator => run_direct_initiator(&shared, link_id, receiver),
-                api::LinkKind::Peer => run_direct_responder(&shared, link_id, receiver),
-            });
+            let spawned = std::thread::Builder::new()
+                .name(format!("qalqon-link-{link_id}"))
+                .spawn(move || match kind {
+                    api::LinkKind::Server | api::LinkKind::Relay => {
+                        run_websocket(&shared, link_id, url.unwrap_or_default(), receiver);
+                    }
+                    api::LinkKind::Peer if initiator => {
+                        run_direct_initiator(&shared, link_id, receiver)
+                    }
+                    api::LinkKind::Peer => run_direct_responder(&shared, link_id, receiver),
+                });
             debug_assert!(spawned.is_ok());
         }
-        TransportCommand::SendFrame { link_id, frame } => shared.links.send(link_id, Outbound::Frame(frame)),
-        TransportCommand::SendSignal { link_id, blob } => shared.links.send(link_id, Outbound::Signal(blob)),
+        TransportCommand::SendFrame { link_id, frame } => {
+            shared.links.send(link_id, Outbound::Frame(frame))
+        }
+        TransportCommand::SendSignal { link_id, blob } => {
+            shared.links.send(link_id, Outbound::Signal(blob))
+        }
         TransportCommand::CloseLink { link_id } => shared.links.send(link_id, Outbound::Close),
     }
 }
 
-fn set_read_timeout(socket: &mut WebSocket<MaybeTlsStream<TcpStream>>, timeout: Duration) -> std::io::Result<()> {
+fn set_read_timeout(
+    socket: &mut WebSocket<MaybeTlsStream<TcpStream>>,
+    timeout: Duration,
+) -> std::io::Result<()> {
     match socket.get_mut() {
         MaybeTlsStream::Plain(stream) => stream.set_read_timeout(Some(timeout)),
         MaybeTlsStream::Rustls(stream) => stream.sock.set_read_timeout(Some(timeout)),
@@ -147,7 +182,8 @@ fn run_websocket(shared: &Arc<Shared>, link: u64, url: String, outbound: Receive
             Ok(Message::Binary(frame)) => report_frame(shared, link, &frame),
             Ok(Message::Close(_)) => return report_closed(shared, link),
             Ok(_) => {}
-            Err(tungstenite::Error::Io(e)) if matches!(e.kind(), IoKind::WouldBlock | IoKind::TimedOut) => {}
+            Err(tungstenite::Error::Io(e))
+                if matches!(e.kind(), IoKind::WouldBlock | IoKind::TimedOut) => {}
             Err(_) => return report_closed(shared, link),
         }
     }
@@ -169,14 +205,23 @@ fn local_addresses() -> Vec<IpAddr> {
 }
 
 fn run_direct_responder(shared: &Arc<Shared>, link: u64, outbound: Receiver<Outbound>) {
-    let Ok(listener) = TcpListener::bind("0.0.0.0:0") else { return report_closed(shared, link) };
-    let Ok(port) = listener.local_addr().map(|a| a.port()) else { return report_closed(shared, link) };
+    let Ok(listener) = TcpListener::bind("0.0.0.0:0") else {
+        return report_closed(shared, link);
+    };
+    let Ok(port) = listener.local_addr().map(|a| a.port()) else {
+        return report_closed(shared, link);
+    };
     if listener.set_nonblocking(true).is_err() {
         return report_closed(shared, link);
     }
-    let candidates: Vec<String> = local_addresses().into_iter().map(|ip| format!("{ip}:{port}")).collect();
+    let candidates: Vec<String> = local_addresses()
+        .into_iter()
+        .map(|ip| format!("{ip}:{port}"))
+        .collect();
     let blob = json!({ "tcp": candidates }).to_string();
-    shared.lock().signal_received(now_ms(), link, blob.as_bytes());
+    shared
+        .lock()
+        .signal_received(now_ms(), link, blob.as_bytes());
     shared.poke();
 
     let deadline = Instant::now() + DIRECT_ACCEPT_WINDOW;
@@ -191,7 +236,9 @@ fn run_direct_responder(shared: &Arc<Shared>, link: u64, outbound: Receiver<Outb
             match outbound.try_recv() {
                 Ok(Outbound::Frame(frame)) => held_frames.push(frame),
                 Ok(Outbound::Signal(_)) => {}
-                Ok(Outbound::Close) | Err(TryRecvError::Disconnected) => return report_closed(shared, link),
+                Ok(Outbound::Close) | Err(TryRecvError::Disconnected) => {
+                    return report_closed(shared, link);
+                }
                 Err(TryRecvError::Empty) => break,
             }
         }
@@ -209,11 +256,19 @@ fn run_direct_initiator(shared: &Arc<Shared>, link: u64, outbound: Receiver<Outb
     let stream = 'waiting: loop {
         match outbound.recv_timeout(Duration::from_millis(50)) {
             Ok(Outbound::Signal(blob)) => {
-                let Ok(signal) = serde_json::from_slice::<serde_json::Value>(&blob) else { continue };
-                let Some(candidates) = signal["tcp"].as_array() else { continue };
+                let Ok(signal) = serde_json::from_slice::<serde_json::Value>(&blob) else {
+                    continue;
+                };
+                let Some(candidates) = signal["tcp"].as_array() else {
+                    continue;
+                };
                 for candidate in candidates.iter().filter_map(|c| c.as_str()) {
-                    let Ok(address) = candidate.parse() else { continue };
-                    if let Ok(stream) = TcpStream::connect_timeout(&address, Duration::from_millis(800)) {
+                    let Ok(address) = candidate.parse() else {
+                        continue;
+                    };
+                    if let Ok(stream) =
+                        TcpStream::connect_timeout(&address, Duration::from_millis(800))
+                    {
                         break 'waiting stream;
                     }
                 }
@@ -221,7 +276,9 @@ fn run_direct_initiator(shared: &Arc<Shared>, link: u64, outbound: Receiver<Outb
             }
             Ok(Outbound::Frame(frame)) => held_frames.push(frame),
             Ok(Outbound::Close) => return report_closed(shared, link),
-            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return report_closed(shared, link),
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                return report_closed(shared, link);
+            }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
         }
         if Instant::now() >= deadline {
@@ -233,7 +290,13 @@ fn run_direct_initiator(shared: &Arc<Shared>, link: u64, outbound: Receiver<Outb
 
 /// A connected direct link. Qalqon authenticates the peer on top of this socket, so
 /// connecting to it proves nothing and reveals nothing (section 5.4).
-fn run_stream(shared: &Arc<Shared>, link: u64, mut stream: TcpStream, outbound: Receiver<Outbound>, held: Vec<Vec<u8>>) {
+fn run_stream(
+    shared: &Arc<Shared>,
+    link: u64,
+    mut stream: TcpStream,
+    outbound: Receiver<Outbound>,
+    held: Vec<Vec<u8>>,
+) {
     let _ = stream.set_nodelay(true);
     let _ = stream.set_nonblocking(false);
     if stream.set_read_timeout(Some(WS_POLL)).is_err() {

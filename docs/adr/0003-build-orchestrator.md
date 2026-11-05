@@ -1,6 +1,6 @@
 # ADR-0003: Build orchestrator
 
-- **Status:** Proposed. Needs owner approval.
+- **Status:** Proposed, and implemented provisionally. The owner asked to proceed without answering, so this can still change.
 - **Date:** 2026-11-05
 
 ## Context
@@ -51,6 +51,8 @@ owners: ["team-backend"]
 
 `combinations.yaml` is generated from these files, and CI fails if it differs from the generator's output.
 
+**Refinement while implementing:** manifests also carry `build` and `conformance`, the folder's own commands, so the CLI needs no knowledge of any ecosystem. See `docs/BUILD.md`.
+
 ### 4. Mixed-client triples
 
 The design says triples are declared in `combinations.yaml`, but that file is generated and cannot be hand-edited, and the manifest has no field for them. It also says they run nightly in one place and on every PR in another.
@@ -60,6 +62,8 @@ The proposal adds an optional `primary_triples` field to a host's manifest. Trip
 ### 5. The cache
 
 The core is built once per target into `.qalqon/cache/<key>/`, shared with CI through the Actions cache. The key is a hash of the core source tree, `Cargo.lock`, the Rust toolchain version, the target triple, the feature set and the provider library version.
+
+**So far:** `.qalqon/cache` holds stamps keyed by a folder's sources, its dependencies, `Cargo.lock` and the toolchain, so an unchanged folder is not rebuilt. It does not yet store built artifacts or cover several targets. Cargo's own target directory does that work on one machine.
 
 **Refinement to the design:** "all bindings share one set of binaries" holds for bindings that link the C ABI: C, Go, .NET, Dart, Java and Qt. Rust-based bridges (napi-rs, PyO3, wasm-bindgen, UniFFI) statically compile the core into their own artifact, so they cannot link a prebuilt binary. For those, the guarantee is identical source and lockfile, proved at runtime by a matching `qalqon_build_id()` and by the conformance run. The release pipeline checks that all build IDs in a release match.
 

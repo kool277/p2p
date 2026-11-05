@@ -224,16 +224,25 @@ fn a_session_built_for_each_role_needs_the_matching_certificate_role() {
         Plane::Data,
         TransportCaps::STREAM,
         &client,
-        PeerExpectation::Peer { user_id: "host".into(), device_id: None },
+        PeerExpectation::Peer {
+            user_id: "host".into(),
+            device_id: None,
+        },
     );
     let r = pki.config(
         Role::Responder,
         Plane::Data,
         TransportCaps::STREAM,
         &server,
-        PeerExpectation::Peer { user_id: "alice".into(), device_id: None },
+        PeerExpectation::Peer {
+            user_id: "alice".into(),
+            device_id: None,
+        },
     );
     let mut link = Link::new(i, r);
     link.pump();
-    assert!(!established(&link), "a server certificate must not work on the data plane");
+    assert!(
+        !established(&link),
+        "a server certificate must not work on the data plane"
+    );
 }

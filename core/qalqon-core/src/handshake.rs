@@ -169,10 +169,12 @@ fn open_encrypted_part(
 }
 
 /// `(chain, signature, mac)`, the encrypted part of `XX_RESP` and `XX_FINISH`.
+type EncryptedPart<'a> = (&'a [u8], &'a [u8], &'a [u8]);
+
 fn parse_encrypted_part(
     plain: &[u8],
     hash_len: usize,
-) -> Result<(&[u8], &[u8], &[u8]), HandshakeFailure> {
+) -> Result<EncryptedPart<'_>, HandshakeFailure> {
     let bad = "malformed encrypted handshake fields";
     let mut r = Reader::new(plain);
     let chain = r.vec16().map_err(generic(bad))?;

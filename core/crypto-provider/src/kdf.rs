@@ -31,8 +31,10 @@ pub(crate) fn hmac(
     hash(&outer)
 }
 
+type MacFn<'a> = &'a dyn Fn(&[u8], &[u8]) -> Vec<u8>;
+
 pub(crate) fn hkdf_expand(
-    mac: &dyn Fn(&[u8], &[u8]) -> Vec<u8>,
+    mac: MacFn<'_>,
     hash_len: usize,
     prk: &[u8],
     info: &[u8],

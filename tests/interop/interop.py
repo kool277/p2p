@@ -41,7 +41,8 @@ CLIENTS = {
 }
 
 # A browser has no direct path to a native peer yet, so it reaches one through the relay.
-RELAY_ONLY_WITH_NATIVE = {"web-react"}
+# Two browsers connect directly over WebRTC.
+BROWSERS = {"web-react"}
 
 SERVERS = {
     "rust-axum": lambda port, db, pki, token, relay: [
@@ -261,8 +262,8 @@ def run_cell(args):
 
         # Two browsers get a direct WebRTC path, and a browser with a native peer falls
         # back to the relay by itself. That fallback is part of what this checks.
-        pair = {args.client, args.peer}
-        expected = "relayed" if pair & RELAY_ONLY_WITH_NATIVE and pair != RELAY_ONLY_WITH_NATIVE else "direct"
+        browsers = sum(c in BROWSERS for c in (args.client, args.peer))
+        expected = "relayed" if browsers == 1 else "direct"
         first, _ = scenario(cell, args.client, args.peer, data_a, data_b, False, expected, env, "prefer-direct")
         if first["peer_status"] != "pinned":
             raise Failure(f"expected a pinned peer on first contact, got {first['peer_status']}")

@@ -3,6 +3,7 @@
 #![forbid(unsafe_code)]
 #![allow(missing_docs)]
 
+#[rustfmt::skip]
 mod generated;
 pub use generated::*;
 
@@ -68,6 +69,7 @@ pub mod b64_opt {
     /// For `#[serde(with = "b64_opt")]`.
     pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Option<Vec<u8>>, D::Error> {
         let text = Option::<String>::deserialize(d)?;
-        text.map(|t| b64::decode(&t).ok_or_else(|| serde::de::Error::custom("not valid base64"))).transpose()
+        text.map(|t| b64::decode(&t).ok_or_else(|| serde::de::Error::custom("not valid base64")))
+            .transpose()
     }
 }
