@@ -1,6 +1,6 @@
 # ADR-0001: Key agreement
 
-- **Status:** Proposed. Blocked on the library facts, then needs owner approval.
+- **Status:** Proposed. Blocked on the library facts. Only the test-only suites are implemented, which use X25519 and ML-KEM-768 and have no national component.
 - **Date:** 2026-11-05
 
 ## Context

@@ -1,0 +1,7 @@
+name: coturn
+kind: infra
+language: config
+targets: [linux-x64]
+depends_on: []
+toolchain: {}
+owners: [core-team]

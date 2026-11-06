@@ -1,0 +1,29 @@
+# A local deployment: the reference host, the blind relay and coturn. Development only: it
+# uses the test-only crypto provider, and it protects nothing real.
+#
+#   docker compose -f infra/compose/docker-compose.yaml up --build
+services:
+  host:
+    build:
+      context: ../..
+      dockerfile: servers/rust-axum/Dockerfile
+    command: ["/app/start-host.sh"]
+    environment:
+      RELAY_URL: ws://127.0.0.1:9100/
+    ports: ["8443:8443"]
+    volumes: ["qalqon-pki:/pki", "qalqon-data:/data"]
+  relay:
+    build:
+      context: ../..
+      dockerfile: servers/rust-axum/Dockerfile
+    command: ["/app/start-relay.sh"]
+    ports: ["9100:9100"]
+    volumes: ["qalqon-pki:/pki"]
+    depends_on: [host]
+  coturn:
+    image: coturn/coturn:4.6.3
+    network_mode: host
+    volumes: ["../coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro"]
+volumes:
+  qalqon-pki: {}
+  qalqon-data: {}

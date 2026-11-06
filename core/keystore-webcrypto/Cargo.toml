@@ -1,0 +1,17 @@
+[package]
+name = "keystore-webcrypto"
+description = "Browser key storage: a signing key wrapped by a non-extractable WebCrypto key. JavaScript only ever holds the wrapped bytes."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+crypto-provider = { workspace = true }
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = ["CryptoKey", "SubtleCrypto", "WorkerGlobalScope", "Crypto", "AesGcmParams"] }
+
+[lints]
+workspace = true

@@ -1,0 +1,8 @@
+name: qalqon-sdk
+kind: core
+language: rust
+delivery: rust
+targets: [linux-x64]
+depends_on: [core/qalqon-signal, core/server-core, core/keystore-file, core/provider-testonly, core/qalqon-conformance]
+toolchain: { cargo: ">=1.85" }
+owners: [core-team]

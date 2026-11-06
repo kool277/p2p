@@ -1,0 +1,104 @@
+(* Property 10, server substitution. The CA key is public, modelling a malicious
+   server that can obtain a valid certificate for anyone. Alice has pinned bob's key,
+   and bob has pinned alice's. A certificate the server obtained for bob with another
+   key must not establish a channel. First contact is checked separately in
+   first_contact.pv, where this protection is absent. *)
+
+free msg_to_bob: bitstring [private].
+free msg_to_alice: bitstring [private].
+
+query attacker(msg_to_bob).
+query attacker(msg_to_alice).
+query o: offer, s: suite, h: bitstring, k1: key, k2: key;
+    inj-event(RAccept(alice, bob, o, s, k1, k2)) ==> inj-event(IFinish(alice, bob, o, s, h, k1, k2)).
+query o: offer, s: suite, k1: key, k2: key;
+    inj-event(IConfirmed(alice, bob, o, s, k1, k2)) ==> inj-event(RAccept(alice, bob, o, s, k1, k2)).
+(* Sanity: expected false. The pin check does not stop the honest run. *)
+query o: offer, s: suite, k1: key, k2: key; event(IConfirmed(alice, bob, o, s, k1, k2)).
+
+let PinnedInitiator(me: id, skme: skey, chain_me: bitstring, capk: pkey, peer: id, pin: pkey, m: bitstring) =
+    in(c, o: offer);
+    new x: exponent;
+    new rand_i: bitstring;
+    let gx = exp(g, x) in
+    let t1 = (rand_i, o, gx, no_kr) in
+    out(c, t1);
+    in(c, (s: suite, rand_r: bitstring, gy: G, sealed: bitstring));
+    if in_offer(s, o) = true then
+    let hs = extract(exp(gy, x)) in
+    let t2 = (t1, s, rand_r, gy) in
+    let i_hs = d_i_hs(hs, H(t2)) in
+    let r_hs = d_r_hs(hs, H(t2)) in
+    let (chain_r: bitstring, sig_r: bitstring, mac_r: bitstring) = open(sealed, tk(r_hs), (s, rand_r, gy)) in
+    if cert_check(chain_r, capk) = true then
+    if cert_id(chain_r) = peer then
+    let t3 = (t2, chain_r) in
+    if checksign(sig_r, cert_pk(chain_r), (ctx_r, H(t3))) = true then
+    let t4 = (t3, sig_r) in
+    if mac_r = hmac(fin(r_hs), H(t4)) then
+    (* Step 4 of section 7.3, after the signature and MAC. *)
+    if cert_pk(chain_r) <> pin then event PinRefused(me, peer) else
+    let t5 = (t4, mac_r) in
+    let t6 = (t5, chain_me) in
+    let sig_i = sign((ctx_i, H(t6)), skme) in
+    let t7 = (t6, sig_i) in
+    let mac_i = hmac(fin(i_hs), H(t7)) in
+    let t8 = (t7, mac_i) in
+    let ms = master(hs) in
+    let i_ap = d_i_ap(ms, H(t8)) in
+    let r_ap = d_r_ap(ms, H(t8)) in
+    event IFinish(me, peer, o, s, H(t5), i_ap, r_ap);
+    out(c, aead((chain_me, sig_i, mac_i), tk(i_hs), empty));
+    out(c, aead(m, tk(i_ap), empty));
+    in(c, confirm: bitstring);
+    let k = open(confirm, tk(r_ap), empty) in
+    if k = key_confirm then
+    event IConfirmed(me, peer, o, s, i_ap, r_ap).
+
+let PinnedResponder(me: id, skme: skey, chain_me: bitstring, capk: pkey, peer: id, pin: pkey) =
+    in(c, t1: bitstring);
+    let (rand_i: bitstring, o: offer, gx: G, kr: bitstring) = t1 in
+    new y: exponent;
+    new rand_r: bitstring;
+    let gy = exp(g, y) in
+    let s = choose(o) in
+    let hs = extract(exp(gx, y)) in
+    let t2 = (t1, s, rand_r, gy) in
+    let i_hs = d_i_hs(hs, H(t2)) in
+    let r_hs = d_r_hs(hs, H(t2)) in
+    let t3 = (t2, chain_me) in
+    let sig_r = sign((ctx_r, H(t3)), skme) in
+    let t4 = (t3, sig_r) in
+    let mac_r = hmac(fin(r_hs), H(t4)) in
+    let t5 = (t4, mac_r) in
+    out(c, (s, rand_r, gy, aead((chain_me, sig_r, mac_r), tk(r_hs), (s, rand_r, gy))));
+    in(c, finish: bitstring);
+    let (chain_i: bitstring, sig_i: bitstring, mac_i: bitstring) = open(finish, tk(i_hs), empty) in
+    if cert_check(chain_i, capk) = true then
+    if cert_id(chain_i) = peer then
+    let t6 = (t5, chain_i) in
+    if checksign(sig_i, cert_pk(chain_i), (ctx_i, H(t6))) = true then
+    let t7 = (t6, sig_i) in
+    if mac_i = hmac(fin(i_hs), H(t7)) then
+    if cert_pk(chain_i) <> pin then event PinRefused(me, peer) else
+    let t8 = (t7, mac_i) in
+    let ms = master(hs) in
+    let i_ap = d_i_ap(ms, H(t8)) in
+    let r_ap = d_r_ap(ms, H(t8)) in
+    event RAccept(peer, me, o, s, i_ap, r_ap);
+    out(c, aead(key_confirm, tk(r_ap), empty));
+    out(c, aead(msg_to_alice, tk(r_ap), empty)).
+
+process
+    new skca: skey;
+    new ska: skey;
+    new skb: skey;
+    let capk = pk(skca) in
+    let chain_a = cert(alice, pk(ska), skca) in
+    let chain_b = cert(bob, pk(skb), skca) in
+    (* The malicious server: the attacker holds the CA key from the start. *)
+    out(c, (skca, capk, pk(ska), pk(skb), chain_a, chain_b));
+    (
+        (!PinnedInitiator(alice, ska, chain_a, capk, bob, pk(skb), msg_to_bob))
+      | (!PinnedResponder(bob, skb, chain_b, capk, alice, pk(ska)))
+    )

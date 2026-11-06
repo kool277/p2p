@@ -1,0 +1,46 @@
+(* What the specification says is exposed: with a malicious CA and no pin, first
+   contact can be substituted (section 11.4). This query is expected to come back
+   FALSE. If it ever turned true, the model would have stopped modelling the attacker,
+   and the "true" results elsewhere could not be trusted. *)
+
+free msg: bitstring [private].
+query attacker(msg).
+
+process
+    new skca: skey;
+    new ska: skey;
+    new skb: skey;
+    let capk = pk(skca) in
+    let chain_a = cert(alice, pk(ska), skca) in
+    out(c, (skca, capk, pk(ska), pk(skb), chain_a));
+    (
+        ! (
+            in(c, o: offer);
+            new x: exponent;
+            new rand_i: bitstring;
+            let t1 = (rand_i, o, exp(g, x), no_kr) in
+            out(c, t1);
+            in(c, (s: suite, rand_r: bitstring, gy: G, sealed: bitstring));
+            if in_offer(s, o) = true then
+            let hs = extract(exp(gy, x)) in
+            let t2 = (t1, s, rand_r, gy) in
+            let i_hs = d_i_hs(hs, H(t2)) in
+            let r_hs = d_r_hs(hs, H(t2)) in
+            let (chain_r: bitstring, sig_r: bitstring, mac_r: bitstring) = open(sealed, tk(r_hs), (s, rand_r, gy)) in
+            if cert_check(chain_r, capk) = true then
+            if cert_id(chain_r) = bob then
+            let t3 = (t2, chain_r) in
+            if checksign(sig_r, cert_pk(chain_r), (ctx_r, H(t3))) = true then
+            let t4 = (t3, sig_r) in
+            if mac_r = hmac(fin(r_hs), H(t4)) then
+            let t5 = (t4, mac_r) in
+            let t6 = (t5, chain_a) in
+            let sig_i = sign((ctx_i, H(t6)), ska) in
+            let t7 = (t6, sig_i) in
+            let mac_i = hmac(fin(i_hs), H(t7)) in
+            let t8 = (t7, mac_i) in
+            let i_ap = d_i_ap(master(hs), H(t8)) in
+            out(c, aead((chain_a, sig_i, mac_i), tk(i_hs), empty));
+            out(c, aead(msg, tk(i_ap), empty))
+        )
+    )

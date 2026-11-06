@@ -1,6 +1,6 @@
 # Client Adapter Contract
 
-Version v0. **Status: proposal for the Phase 0 gate.** Nothing is implemented.
+Version v0. **Status: draft, implemented by `packages/js/react` and the four clients in `clients/`.**
 
 An adapter makes the SDK feel native in one framework. It adds no behaviour of its own. Adding a client framework means writing an adapter, and never means changing `core/`.
 
@@ -54,7 +54,9 @@ on link end:                  transport.linkClosed(linkId)
 
 Frames are already encrypted when the adapter sees them, so this code handles only ciphertext and connectivity data.
 
-In browsers the core runs in a Web Worker, under a strict Content Security Policy. Key storage is handled inside the core (ADR-0002, part 6), so adapters never handle WebCrypto keys.
+In browsers the core runs in a Web Worker, under a strict Content Security Policy. Key storage is handled inside the core (ADR-0002, part 6), so adapters never handle key bytes. JavaScript holds a non-extractable `CryptoKey` and an opaque wrapped blob.
+
+WebRTC does not exist inside a Worker, so the page owns the `RTCPeerConnection` and passes frames, which are already encrypted, to and from the worker.
 
 ## The demo app
 
@@ -71,8 +73,27 @@ Every `clients/` folder has the same screens, so that interop runs can drive the
 
 Automation IDs follow the pattern `qalqon-<screen>-<control>`. Interop tests use Playwright for browsers, Maestro for Android and iOS, and each CLI's own commands elsewhere. CLI clients print events as JSON Lines, so a test can read them.
 
+## The CLI contract
+
+Interop runs drive every client the same way, so a client must offer these commands, directly or through a driver like `tests/interop/web/driver.mjs`.
+
+```
+<client> enroll --server <url> --ca <hex file> --data <dir> --token <token>
+<client> call   --server <url> --ca <hex file> --data <dir> --user <id> --peer <id> [--records N] [--relay-only]
+<client> answer --server <url> --ca <hex file> --data <dir> --user <id> [--relay-only] [--wait-ms N]
+```
+
+The password comes from the `QALQON_PASSWORD` environment variable, because arguments are visible to every process on the machine. Output is one JSON object per line.
+
+| Line | When |
+| --- | --- |
+| `{"enrolled": ...}` | `enroll` succeeded |
+| `{"state": "connected"}` | Logged in, so a test can start the caller |
+| `{"result": "ok", "records": n, "path": ..., "key_epoch": ..., "peer_status": ..., "safety_number": ..., "audit_entries": n}` | `call` finished. It sends numbered records with at most 64 outstanding, checks each echo, and rotates keys halfway. `answer` reports the same fields, except `key_epoch` and `audit_entries` |
+| `{"result": "error", "error": ...}` | It failed, with a non-zero exit |
+
 ## Checklist for a new adapter
 
-1. Run `qalqon new client --lang <x> --framework <y>` (available from Phase 2).
+1. Run `qalqon new client --lang <x> --framework <y>`.
 2. Write the idiomatic wrapper and the demo screens.
 3. Pass `qalqon test --pair <client>:<server>`.

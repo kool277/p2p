@@ -1,0 +1,33 @@
+# Outside the workspace, because it needs nightly and cargo-fuzz.
+#   cd tools/fuzz && cargo +nightly fuzz run <target> -- -max_total_time=3600
+[package]
+name = "qalqon-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+qalqon-core = { path = "../../core/qalqon-core" }
+provider-testonly = { path = "../../core/provider-testonly" }
+
+[workspace]
+
+# provider-testonly refuses to build without debug assertions.
+[profile.release]
+debug-assertions = true
+
+[[bin]]
+name = "parsers"
+path = "fuzz_targets/parsers.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "session"
+path = "fuzz_targets/session.rs"
+test = false
+doc = false

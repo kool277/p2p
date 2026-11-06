@@ -1,0 +1,9 @@
+name: {{name}}
+kind: client
+language: {{lang}}
+framework: {{framework}}
+delivery: ffi
+targets: [linux-x64]
+depends_on: []
+toolchain: {}
+owners: [unowned]

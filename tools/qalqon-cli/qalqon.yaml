@@ -1,0 +1,8 @@
+name: qalqon-cli
+kind: tool
+language: rust
+delivery: rust
+targets: [linux-x64]
+depends_on: []
+toolchain: { cargo: ">=1.85" }
+owners: [core-team]

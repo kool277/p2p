@@ -1,0 +1,9 @@
+name: web
+kind: package
+language: javascript
+framework: browser
+delivery: wasm
+targets: [web]
+depends_on: [bindings/wasm]
+toolchain: { node: ">=22" }
+owners: [core-team]

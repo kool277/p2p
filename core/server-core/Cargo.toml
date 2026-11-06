@@ -1,0 +1,22 @@
+[package]
+name = "server-core"
+description = "The server side as a library: session registry, rendezvous, policy, rate limits, audit chaining and the admin model. Embedded by every host."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+crypto-provider = { workspace = true }
+crypto-ext = { workspace = true, features = ["argon2id"] }
+qalqon-core = { workspace = true }
+qalqon-audit = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+provider-testonly = { workspace = true }
+qalqon-ca = { path = "../../tools/qalqon-ca" }
+
+[lints]
+workspace = true

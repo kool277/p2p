@@ -1,0 +1,100 @@
+# The root virtual workspace (ADR-0003, part 2). One Cargo.lock guarantees that
+# every Rust folder compiles identical core sources.
+[workspace]
+resolver = "3"
+members = [
+    "core/crypto-provider",
+    "core/crypto-ext",
+    "core/provider-testonly",
+    "core/keystore-file",
+    "core/qalqon-core",
+    "core/qalqon-audit",
+    "core/qalqon-transport",
+    "core/qalqon-transport-tcp",
+    "core/qalqon-transport-udp",
+    "core/server-core",
+    "core/qalqon-conformance",
+    "core/qalqon-api",
+    "core/qalqon-signal",
+    "core/qalqon-sdk",
+    "core/ffi",
+    "core/sidecar",
+    "core/keystore-webcrypto",
+    "bindings/wasm",
+    "servers/rust-axum",
+    "infra/relay",
+    "clients/cli-rust",
+    "tools/qalqon-cli",
+    "tools/idlgen",
+    "tools/vectors",
+    "tools/qalqon-ca",
+    "tools/peer-demo",
+]
+default-members = [
+    "core/crypto-provider",
+    "core/crypto-ext",
+    "core/provider-testonly",
+    "core/keystore-file",
+    "core/qalqon-core",
+    "core/qalqon-audit",
+    "core/qalqon-transport",
+    "core/qalqon-transport-tcp",
+    "core/qalqon-transport-udp",
+    "core/server-core",
+    "core/qalqon-conformance",
+    "core/qalqon-api",
+    "core/qalqon-signal",
+    "core/qalqon-sdk",
+    "core/ffi",
+    "core/sidecar",
+    "core/keystore-webcrypto",
+    "bindings/wasm",
+    "servers/rust-axum",
+    "infra/relay",
+    "clients/cli-rust",
+    "tools/qalqon-cli",
+    "tools/idlgen",
+    "tools/vectors",
+    "tools/qalqon-ca",
+    "tools/peer-demo",
+    "tools/qalqon-cli",
+]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.85"
+publish = false
+
+[workspace.dependencies]
+crypto-provider = { path = "core/crypto-provider" }
+crypto-ext = { path = "core/crypto-ext" }
+provider-testonly = { path = "core/provider-testonly" }
+qalqon-core = { path = "core/qalqon-core" }
+qalqon-audit = { path = "core/qalqon-audit" }
+qalqon-transport = { path = "core/qalqon-transport" }
+qalqon-transport-tcp = { path = "core/qalqon-transport-tcp" }
+qalqon-transport-udp = { path = "core/qalqon-transport-udp" }
+keystore-file = { path = "core/keystore-file" }
+server-core = { path = "core/server-core" }
+qalqon-conformance = { path = "core/qalqon-conformance" }
+qalqon-api = { path = "core/qalqon-api" }
+qalqon-signal = { path = "core/qalqon-signal" }
+qalqon-sdk = { path = "core/qalqon-sdk" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+zeroize = { version = "1.9", default-features = false, features = ["alloc"] }
+subtle = { version = "2.6", default-features = false }
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+missing_debug_implementations = "warn"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+# Debug assertions stay on in the dev profile, which is what lets
+# provider-testonly compile. Dependencies are optimised so Argon2id and the
+# primitives run at a usable speed in tests.
+[profile.dev.package."*"]
+opt-level = 3

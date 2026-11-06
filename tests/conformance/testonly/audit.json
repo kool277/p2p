@@ -1,0 +1,16 @@
+{
+  "kind": "audit",
+  "provider": "testonly",
+  "vectors": [
+    {
+      "entry_hashes": [
+        "cca64314f0d908f21b97a5d7473968d9fadb0db4c7ca3973c866302a95da5c78",
+        "099d97c6ec811f8fed8c5a7912853acfdedc1a673c71e4a6d6df4459b6e9c3ee",
+        "f47a4c3b264ddb663f1e3133e7f6460d4a7afce7f790ec3606a1d09a1ae1ab04",
+        "557561f0cbb0e7217bffc9c42d43dae7a56556868c3e59bb76c982d0b2dafded"
+      ],
+      "fingerprint": "766563746f722066696e6765727072696e74",
+      "name": "hash chain"
+    }
+  ]
+}

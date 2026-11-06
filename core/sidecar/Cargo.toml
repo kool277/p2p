@@ -1,0 +1,19 @@
+[package]
+name = "qalqond"
+description = "The sidecar daemon: serves the SDK API over a local socket to any language (ADR-0004)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+qalqon-sdk = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+crypto-provider = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+rustix = { version = "1", features = ["net", "process"] }
+
+[lints]
+workspace = true

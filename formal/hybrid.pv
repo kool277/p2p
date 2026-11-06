@@ -1,0 +1,41 @@
+(* Property 3: traffic secrets hold while any one key agreement component is sound.
+   Two components feed one Extract, as in the hybrid suites. Each run hands the
+   attacker one component's secrets, chosen by the attacker through `broken`, and
+   the secret must survive while the other stands. *)
+
+set traceDisplay = none.
+
+free c: channel.
+type exponent.
+type G.
+type key.
+const g: G [data].
+fun exp(G, exponent): G.
+equation forall x: exponent, y: exponent; exp(exp(g, x), y) = exp(exp(g, y), x).
+fun extract2(G, G): key.
+fun aead(bitstring, key): bitstring.
+reduc forall m: bitstring, k: key; open(aead(m, k), k) = m.
+
+free secret_a: bitstring [private].
+free secret_b: bitstring [private].
+
+query attacker(secret_a).
+query attacker(secret_b).
+
+(* Component 1 is broken: the attacker learns its exponents. *)
+let BrokenFirst =
+    new x1: exponent; new x2: exponent; new y1: exponent; new y2: exponent;
+    out(c, (x1, y1));
+    out(c, (exp(g, x1), exp(g, x2), exp(g, y1), exp(g, y2)));
+    let k = extract2(exp(exp(g, y1), x1), exp(exp(g, y2), x2)) in
+    out(c, aead(secret_a, k)).
+
+(* Component 2 is broken. *)
+let BrokenSecond =
+    new x1: exponent; new x2: exponent; new y1: exponent; new y2: exponent;
+    out(c, (x2, y2));
+    out(c, (exp(g, x1), exp(g, x2), exp(g, y1), exp(g, y2)));
+    let k = extract2(exp(exp(g, y1), x1), exp(exp(g, y2), x2)) in
+    out(c, aead(secret_b, k)).
+
+process (!BrokenFirst) | (!BrokenSecond)

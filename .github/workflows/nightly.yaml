@@ -1,0 +1,51 @@
+# Nightly: the formal models, longer fuzzing, and every client against every server.
+name: nightly
+on:
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  proofs:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -q -t qalqon-proverif formal
+      - run: formal/run.sh
+
+  fuzz:
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        target: [parsers, session]
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install nightly --profile minimal
+      - run: cargo install cargo-fuzz --locked
+      - run: cargo +nightly fuzz run --fuzz-dir tools/fuzz ${{ matrix.target }} -- -max_total_time=3600
+
+  matrix:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: rustup show
+      - run: cargo install wasm-bindgen-cli --version 0.2.130 --locked
+      - run: sudo apt-get update && sudo apt-get install -y php-cli jq
+      - run: cd tests/interop/web && npm install && npx playwright install --with-deps chromium
+      - name: Discover the matrix from the manifests, and run every cell
+        run: |
+          cargo qalqon build --client web-react --server rust-axum
+          cargo qalqon build --client cli-c --server rust-axum
+          cargo build -q -p qalqond
+          for client in cli-rust cli-c php-cli web-react; do
+            cargo qalqon test --pair "$client:rust-axum"
+          done
+          cargo qalqon test --triple web-react,cli-c:rust-axum
+          cargo qalqon test --triple web-react,web-react:rust-axum

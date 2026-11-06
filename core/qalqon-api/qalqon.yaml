@@ -1,0 +1,8 @@
+name: qalqon-api
+kind: core
+language: rust
+delivery: rust
+targets: [linux-x64]
+depends_on: [core/idl]
+toolchain: { cargo: ">=1.85" }
+owners: [core-team]

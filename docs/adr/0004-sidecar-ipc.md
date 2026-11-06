@@ -1,6 +1,6 @@
 # ADR-0004: Sidecar IPC
 
-- **Status:** Proposed. Needs owner approval.
+- **Status:** Proposed, and implemented provisionally on Unix. The owner asked to proceed without answering, so this can still change.
 - **Date:** 2026-11-05
 
 ## Context
@@ -37,8 +37,8 @@ The reply carries `abi`, `protocol_version` and `build_id`. A different major `a
 | Platform | Endpoint | Access check |
 | --- | --- | --- |
 | Linux | Unix socket in `$XDG_RUNTIME_DIR/qalqon/`, directory mode `0700` | `SO_PEERCRED`: the peer's UID must match the daemon's |
-| macOS, FreeBSD | Unix socket in a per-user `0700` directory | `getpeereid()`: same rule |
-| Windows | Named pipe with a DACL for the current user and `PIPE_REJECT_REMOTE_CLIENTS` | Client token's SID must match, using `ImpersonateNamedPipeClient` |
+| macOS, FreeBSD | Unix socket in a per-user `0700` directory | `getpeereid()`: same rule (**not built yet**, so only the directory's mode protects it) |
+| Windows | Named pipe with a DACL for the current user and `PIPE_REJECT_REMOTE_CLIENTS` (**not built yet**) | Client token's SID must match, using `ImpersonateNamedPipeClient` |
 | Anywhere else, or restricted runtimes | Loopback TCP on an ephemeral port | Per-launch token |
 
 The loopback token is 32 random bytes, written to a `0600` file whose path `qalqond` prints at launch, and compared in constant time. It never appears on a command line or in an environment listing.
@@ -49,7 +49,9 @@ The daemon shares a Unix socket with the host through a volume mounted only into
 
 ### Shell and other minimal clients
 
-`curl` cannot speak length-prefixed JSON-RPC, so the shell client is a thin wrapper around a `qalqond call <method> '<json>'` subcommand, which speaks the protocol for the script. This meets the prompt's "curl-style" intent without adding an HTTP server to the daemon.
+`curl` cannot speak length-prefixed JSON-RPC, so `qalqond call <socket> <method> '<json>'` speaks the protocol for a script. This meets the prompt's "curl-style" intent without adding an HTTP server to the daemon.
+
+**Refinement while implementing:** handles die with their connection, so one call per process cannot hold a session. The shell client therefore talks to a long-running `qalqond client <socket>`, which turns JSON lines into framed requests over one connection, through named pipes. `qalqond call` remains for calls that hold no handle.
 
 ### Client libraries
 

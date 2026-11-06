@@ -1,0 +1,8 @@
+name: keystore-file
+kind: core
+language: rust
+delivery: rust
+targets: [linux-x64]
+depends_on: [core/crypto-provider]
+toolchain: { cargo: ">=1.85" }
+owners: [core-team]

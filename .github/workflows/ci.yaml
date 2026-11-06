@@ -1,0 +1,79 @@
+# Every pull request: the checks, the shared vectors in each runtime, and every primary pair.
+name: ci
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            target
+          key: ${{ runner.os }}-checks-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+      - run: rustup show
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
+      - name: Generated files are not stale
+        run: |
+          cargo run -q -p idlgen -- --check
+          cargo run -q -p vectors -- check tests/conformance/testonly
+          cargo qalqon manifests --check
+      - name: Rule 0.4
+        run: cargo qalqon lint
+      - name: The core builds without an operating system
+        run: |
+          rustup target add thumbv7em-none-eabi riscv32imac-unknown-none-elf
+          cargo build -p qalqon-core --target thumbv7em-none-eabi
+          cargo build -p qalqon-core --target riscv32imac-unknown-none-elf
+      - name: A release profile refuses the test-only provider
+        run: |
+          if cargo build --release -p provider-testonly 2>/dev/null; then
+            echo "provider-testonly compiled in a release profile"
+            exit 1
+          fi
+      - name: Two peers over TCP and UDP
+        run: tests/phase1-gate.sh
+
+  pairs:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/bin
+            target
+          key: ${{ runner.os }}-pairs-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+      - run: rustup show
+      - run: cargo install wasm-bindgen-cli --version 0.2.130 --locked || true
+      - run: sudo apt-get update && sudo apt-get install -y php-cli jq
+      - name: Browser for the web client
+        run: cd tests/interop/web && npm ci || npm install && npx playwright install --with-deps chromium
+      - run: cargo qalqon doctor
+      - name: Build everything the pairs need
+        run: |
+          cargo qalqon build --client web-react --server rust-axum
+          cargo qalqon build --client cli-c --server rust-axum
+          cargo build -q -p qalqond
+      - name: The shared vectors, in each runtime
+        run: |
+          cargo qalqon test --conformance c
+          cargo qalqon test --conformance sidecar-clients
+          cargo qalqon test --conformance wasm
+          bash bindings/sidecar-clients/shell/conformance.sh tests/conformance/testonly/*.json
+      - name: Every primary pair and triple
+        run: cargo qalqon test --primary

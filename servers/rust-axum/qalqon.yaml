@@ -1,0 +1,13 @@
+name: rust-axum
+kind: server
+language: rust
+framework: axum
+delivery: rust
+targets: [linux-x64]
+depends_on: [core/qalqon-sdk, infra/relay]
+toolchain: { cargo: ">=1.85" }
+primary_pairs: [cli-rust, cli-c, web-react, php-cli]
+primary_triples: [[web-react, cli-c]]
+build:
+  - cargo build -q -p qalqon-axum
+owners: [core-team]

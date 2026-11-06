@@ -1,0 +1,8 @@
+name: qalqon-audit
+kind: core
+language: rust
+delivery: rust
+targets: [linux-x64]
+depends_on: [core/qalqon-core]
+toolchain: { cargo: ">=1.85" }
+owners: [core-team]

@@ -1,0 +1,11 @@
+name: cli-c
+kind: client
+language: c
+delivery: ffi
+targets: [linux-x64]
+depends_on: [bindings/c]
+toolchain: { gcc: ">=9" }
+build:
+  - mkdir -p target/cli-c
+  - gcc -std=c11 -D_GNU_SOURCE -Wall -Wextra -Werror -Ibindings/c/include clients/cli-c/main.c -o target/cli-c/qalqon-cli-c target/debug/libqalqon.a -lpthread -ldl -lm
+owners: [core-team]

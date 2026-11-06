@@ -1,0 +1,66 @@
+{
+  "kind": "records",
+  "provider": "testonly",
+  "vectors": [
+    {
+      "frames": [
+        {
+          "channel": 0,
+          "frame": "514c01ff0110000000000000000000000029e25fde698388b3713f90c5d5a942a66d7a4acd5cf067b5e84df703481103670e4749e8dc22b311a92c",
+          "plaintext": "080808080808080808"
+        },
+        {
+          "channel": 1,
+          "frame": "514c01ff011000010000000000000001002acf1c7d7ba1ecf2cbaf4053b043952092a84be3a0cd76b2f835616919228b5030b0f7f060308e3bbfe9fa",
+          "plaintext": "01000000000000016869"
+        },
+        {
+          "channel": 1,
+          "frame": "514c01ff0110000100000000000000020048c819e506edff4027397cb468a8d2820e9b3a7c306c0251d14ae268547c3c37044879a6da75d6770ea936a360de51e0191ff70f77c1ea6ce50931d2a4e698d9142cfa7c83e31b414e",
+          "plaintext": "01010101010101010101010101010101010101010101010101010101010101010101010101010101"
+        },
+        {
+          "channel": 1,
+          "epoch": 1,
+          "frame": "514c01ff01100001000100000000000300220ac6580ae9a9d2be43f7e70a3f3cf7057bafbbcd09941407e7b6417febed9eba9502",
+          "plaintext": "0109"
+        }
+      ],
+      "i_ap": "6696e944f5bfa901fdd2c3b184e4875a8d1d40574167ec3d47d7ec4b5f312907",
+      "keys_derive": true,
+      "name": "seal and open, strict",
+      "r_ap": "8bad62fe3bd4c977d0deb4d282c639f16911229b8657a8ed962e46c02b487732",
+      "strict": true
+    },
+    {
+      "frames": [
+        {
+          "channel": 0,
+          "frame": "514c01ff0110000000000000000000000029e25fde698388b3713f90c5d5a942a66d7a4acd5cf067b5e84df703481103670e4749e8dc22b311a92c",
+          "plaintext": "080808080808080808"
+        },
+        {
+          "channel": 1,
+          "frame": "514c01ff011000010000000000000001002acf1c7d7ba1ecf2cbaf4053b043952092a84be3a0cd76b2f835616919228b5030b0f7f060308e3bbfe9fa",
+          "plaintext": "01000000000000016869"
+        },
+        {
+          "channel": 1,
+          "frame": "514c01ff0110000100000000000000020048c819e506edff4027397cb468a8d2820e9b3a7c306c0251d14ae268547c3c37044879a6da75d6770ea936a360de51e0191ff70f77c1ea6ce50931d2a4e698d9142cfa7c83e31b414e",
+          "plaintext": "01010101010101010101010101010101010101010101010101010101010101010101010101010101"
+        },
+        {
+          "channel": 1,
+          "epoch": 1,
+          "frame": "514c01ff01100001000100000000000300220ac6580ae9a9d2be43f7e70a3f3cf7057bafbbcd09941407e7b6417febed9eba9502",
+          "plaintext": "0109"
+        }
+      ],
+      "i_ap": "6696e944f5bfa901fdd2c3b184e4875a8d1d40574167ec3d47d7ec4b5f312907",
+      "keys_derive": true,
+      "name": "seal and open, lossy",
+      "r_ap": "8bad62fe3bd4c977d0deb4d282c639f16911229b8657a8ed962e46c02b487732",
+      "strict": false
+    }
+  ]
+}

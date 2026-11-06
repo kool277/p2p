@@ -2,7 +2,7 @@
 
 `PROTOCOL_VERSION` 0.1, draft v0.
 
-**Status: proposal for the Phase 0 gate.** Nothing here is implemented. An AI-assisted review of an earlier version found defects, which are fixed here, but the fixes have not been re-reviewed. There is no formal model or review by a human cryptographer yet. The wire format freezes at Phase 2, and major version 0 makes no compatibility promise.
+**Status: draft, implemented in `core/qalqon-core` against the test-only provider.** Nothing here has run with the certified library. An AI-assisted review of an earlier version found defects, which are fixed here, and `formal/` holds a symbolic model of the handshake, but no human cryptographer has reviewed it. The wire format freezes at Phase 2, and major version 0 makes no compatibility promise.
 
 ## 1. Scope
 
@@ -87,6 +87,8 @@ A `suite_id` names one complete combination. There is no separate negotiation of
 | `0x0000` | Reserved: "not selected yet". Valid only in `XX_INIT`, in its fragments and in `HS_REJECT` | | | |
 | `0x0101` | `nat` + X25519 | R | 1106 | 1092 |
 | `0x0102` | `nat` + X25519 + ML-KEM-768 | R | 1106 | 1092 |
+
+`suite_id` values from `0xFF00` to `0xFFFF` are for tests and are never offered by a release build, so a test build can never negotiate with a real one. `0xFF01` is X25519, and `0xFF02` is X25519 + ML-KEM-768. Both use AES-256-CTR with HMAC-SHA-256 (section 9.2), SHA-256 and Ed25519, and are provided by `core/provider-testonly`.
 
 `R` is the one record protection method chosen from the inventory: the library's AEAD mode if it has one, otherwise CTR or gamma with HMAC-1106 (section 9.2). A build MUST NOT offer two record protection methods. Final suite values are assigned when ADR-0001 and the inventory are complete.
 
@@ -333,8 +335,10 @@ If the library has an AEAD mode, it is used directly, and `TagLen` is its tag le
 
 ```
 ciphertext = CTR-or-gamma(key, nonce, plaintext)
-tag = HMAC(mac, u64(len(aad)) || aad || ciphertext)
+tag = HMAC(mac, u64(len(nonce)) || nonce || u64(len(aad)) || aad || ciphertext)
 ```
+
+The nonce is authenticated because a true AEAD binds its nonce, and a composition that replaces one has to behave the same way.
 
 For CTR, `IvLen = BlockLen - 4`, and each counter block is `nonce || u32(block_index)` with `block_index` starting at 0. A record is at most 65,535 bytes, so `block_index` cannot wrap. Gamma mode's IV format comes from the inventory. Tags are not truncated. A receiver MUST verify the tag in constant time before decrypting.
 
@@ -396,7 +400,7 @@ The first byte of a record's plaintext is `inner_type`. The header's `channel_id
 
 `reason` is one of: 0 `normal`, 1 `protocol_error`, 2 `transport_unsupported`, 3 `message_too_large`, 4 `rejected`, 5 `timeout`, 6 `internal_error`.
 
-An application message larger than one record is split into `DATA` fragments. Reassembly is limited to 16 MiB per message and 64 MiB per session by default, and partial messages on unordered channels time out after 30 seconds.
+A channel's messages are numbered from 0 by `message_id`. An application message larger than one record is split into `DATA` fragments. Reassembly is limited to 16 MiB per message and 64 MiB per session by default, and partial messages on unordered channels time out after 30 seconds.
 
 ### 9.7 Authenticated close
 
@@ -420,7 +424,7 @@ A lost `KEY_UPDATE` with `update_requested = 0` needs no repeat, because the fir
 
 Channel 0 is the session's control channel and always exists. Application channels use IDs from 1 to 65,535: I allocates odd IDs and R allocates even ones, so the two sides never collide. `channel_id` is in the clear but authenticated.
 
-A channel is opened with `CHANNEL_OPEN` and answered with `CHANNEL_ACCEPT` or `CHANNEL_REJECT`. The core does not retransmit application data, so a channel that requires `reliable` on a lossy transport is rejected with `transportUnsupported`.
+A channel is opened with `CHANNEL_OPEN` and answered with `CHANNEL_ACCEPT` or `CHANNEL_REJECT`. The core does not retransmit application data, so a channel that requires `reliable` on a lossy transport is rejected with `transportUnsupported`. On a lossy transport, `ordered` is provided by `message_id`: a message older than the last one delivered is discarded, so order is kept and some messages can be lost.
 
 ## 11. Certificates and trust
 
@@ -451,6 +455,8 @@ tbs extensions, in ascending type order:
     0x8007 sign_public      u16 algorithm, vec16 key
     0x8008 issuer_key_id    16 bytes: first 16 bytes of H(issuer's sign_public key)
 ```
+
+An encoded chain is its certificates concatenated, leaf first. `sign_public` hashes in fingerprints and key IDs cover the whole encoded value, `u16 algorithm, vec16 key`. Signature algorithm `0xFF01` is Ed25519 in the test-only range, and a build accepts only its own provider's algorithm.
 
 ### 11.3 Validating a peer's chain
 
@@ -496,7 +502,7 @@ Each 5 bytes of `okm`, read as an integer modulo 100,000, gives one 5-digit grou
 
 ### 11.5 Revocation
 
-The issuing CA signs a CRL containing `issuer_key_id`, `this_update`, `next_update` (at most 24 hours later) and the revoked serials: `Sign(issuing CA, ctx("crl") || H(crl body))`. Clients fetch it over the control plane when connecting and before `next_update`, and cache it.
+The issuing CA signs a CRL containing `issuer_key_id`, `this_update`, `next_update` (at most 24 hours later) and the revoked serials: `Sign(issuing CA, ctx("crl") || H(crl body))`. On the wire it is `vec16 body; vec16 signature`, and the body is `opaque issuer_key_id[16]; u64 this_update; u64 next_update; vec16 serials`, where `serials` is 16-byte values with no separators. Clients fetch it over the control plane when connecting and before `next_update`, and cache it.
 
 - **No rollback.** A client MUST reject a CRL older than its cached one, by `this_update`.
 - **Fail closed.** A server can withhold a CRL but cannot forge one, so a missing CRL counts as stale. New data-plane sessions fail with `revocationDataStale` once `next_update` is further in the past than `revocationGraceMs` allows (default 72 hours). That setting is local to the client, and server policy cannot change it.
@@ -561,6 +567,14 @@ A `chain` in a rendezvous message is only a hint for showing who is calling. It 
 
 `SESSION_REPORT` is self-reported, so it feeds metrics and never feeds security decisions.
 
+### 12.1 Relay grants
+
+A relay checks a grant with a key it shares with the server, and it holds no session keys. A client's first message to a relay is `opaque rendezvous_id[16]; vec8 token`, and the relay pairs the two clients that present a valid token for the same ID, then forwards frames unchanged.
+
+```
+token = u64(expires_at) || HMAC(relay_key, "qalqon0 relay grant" || 0x00 || rendezvous_id || u64(expires_at))
+```
+
 ## 13. Handshake rejection
 
 `HS_REJECT` has the body `u16 code; opaque echo_random[32]`. The codes are 1 `unsupported_version`, 2 `unsupported_suite` and 3 `busy`. `echo_random` repeats `random` from the `XX_INIT` being rejected, and I ignores a rejection whose echo does not match, so an off-path attacker cannot forge one.
@@ -578,17 +592,17 @@ An endpoint periodically signs a checkpoint: `Sign(identity, ctx("audit checkpoi
 
 ## 15. Security properties for the formal model
 
-The Tamarin or ProVerif model in `formal/` must prove these, against an attacker who controls the network and the server:
+The ProVerif models in `formal/` check these, against an attacker who controls the network and the server. See `formal/README.md`.
 
 1. **Secrecy** of `i_ap_*` and `r_ap_*`.
 2. **Forward secrecy:** compromising identity keys after a session does not reveal its traffic keys.
 3. **Hybrid secrecy:** secrets hold while any one key agreement component is sound.
 4. **Mutual injective agreement** on the transcript, roles and identities. R reaches it on verifying `XX_FINISH`, and I on opening R's `KEY_CONFIRM`.
-5. **No impersonation from a leaked ephemeral:** learning one session's ephemeral secret does not let an attacker impersonate that party in any other session.
+5. **No impersonation from a leaked ephemeral:** learning one session's ephemeral secret does not let an attacker impersonate that party in any other session. Whoever holds a session's ephemeral can forge that session's `KEY_CONFIRM`, because it is protected only by that session's keys, so item 4's guarantee to I does not hold for a session whose ephemeral leaked. I still knows that R signed the transcript.
 6. **Downgrade resistance:** both sides agree on the version, the suite and I's full offer, including `known_responder`.
 7. **No identity misbinding** and no key compromise impersonation.
 8. **Rekey forward secrecy:** a leak in one epoch does not reveal any epoch whose keys have already been erased. A receiver's retained keys on a lossy transport are not yet erased, so they are excluded for up to 30 seconds.
-9. **Record integrity on strict transports:** an insertion, deletion, replay or reordering is always detected, and truncation is always reported as an unclean closure.
+9. **Record integrity on strict transports:** an insertion, deletion, replay or reordering is always detected, and truncation is always reported as an unclean closure. This one is covered by tests, not by the model.
 10. **Server substitution:** for a user already pinned, a certificate the server obtained for a new device or a changed key cannot establish a channel without triggering `peerIdentityChanged`.
 
 Identity hiding is a design goal but is not one of the required lemmas. I's identity is encrypted under forward-secret keys and sent only after R has authenticated. R's identity is exposed to an active attacker who can reach it with a valid `rendezvous_id`.
@@ -596,6 +610,8 @@ Identity hiding is a design goal but is not one of the required lemmas. I's iden
 ## 16. Test vectors
 
 `tools/vectors` generates deterministic JSON vectors from the Rust reference, with randomness injected, into `tests/conformance`. They cover `HKDF-Expand-Label`, the key schedule, the handshake byte for byte with and without `known_responder`, record seal and open, replay and epoch handling, and negative cases that every binding must reject.
+
+Today's vectors are in `tests/conformance/testonly` and come from the test-only provider.
 
 ## 17. Not in this version
 
@@ -617,4 +633,4 @@ Identity hiding is a design goal but is not one of the required lemmas. I's iden
 | Final `suite_id` values and whether ML-KEM-768 ships in the first release | ADR-0001 |
 | The session sequence in section 3 | The missing diagram |
 | A CRL must fit in one control record, about 4,000 revocations | Whether large deployments need paging. Short certificate validity keeps the list small |
-| Handshake state tables | Written with the formal model in Phase 1 |
+| Handshake state tables | Not written. `core/qalqon-core/src/session.rs` is the only statement of them so far |

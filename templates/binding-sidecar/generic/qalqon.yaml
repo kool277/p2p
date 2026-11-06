@@ -1,0 +1,9 @@
+name: {{name}}
+kind: binding
+language: {{lang}}
+delivery: sidecar
+targets: [linux-x64]
+depends_on: [core/sidecar]
+toolchain: {}
+conformance: "bash bindings/{{name}}/conformance.sh tests/conformance/testonly/*.json"
+owners: [unowned]

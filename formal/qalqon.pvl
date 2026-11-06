@@ -1,0 +1,179 @@
+(* The Qalqon handshake from docs/PROTOCOL.md, sections 7 and 8, in ProVerif.
+
+   This is a symbolic (Dolev-Yao) model. It assumes perfect primitives, so it says
+   nothing about O'z DSt 1092, 1105 or 1106 themselves, about side channels or about
+   the implementation. It checks the message flow. See formal/README.md. *)
+
+set traceDisplay = none.
+
+free c: channel.
+
+type exponent.
+type G.
+type skey.
+type pkey.
+type key.
+type id.
+type offer.
+type suite.
+
+(* Key agreement. *)
+const g: G [data].
+fun exp(G, exponent): G.
+equation forall x: exponent, y: exponent; exp(exp(g, x), y) = exp(exp(g, y), x).
+
+(* The hash, and the key schedule as one-way functions, one per label. *)
+fun H(bitstring): bitstring.
+fun extract(G): key.
+fun d_i_hs(key, bitstring): key.
+fun d_r_hs(key, bitstring): key.
+fun master(key): key.
+fun d_i_ap(key, bitstring): key.
+fun d_r_ap(key, bitstring): key.
+fun tk(key): key.
+fun fin(key): key.
+fun upd(key): key.
+fun hmac(key, bitstring): bitstring.
+fun krh(bitstring, bitstring): bitstring.
+
+(* AEAD. *)
+fun aead(bitstring, key, bitstring): bitstring.
+reduc forall m: bitstring, k: key, ad: bitstring; open(aead(m, k, ad), k, ad) = m.
+
+(* Signatures, with context separation handled by the two tags below. *)
+fun pk(skey): pkey.
+fun sign(bitstring, skey): bitstring.
+reduc forall m: bitstring, k: skey; checksign(sign(m, k), pk(k), m) = true.
+const ctx_r: bitstring [data].
+const ctx_i: bitstring [data].
+
+(* Certificates. *)
+fun cert(id, pkey, skey): bitstring.
+reduc forall i: id, p: pkey, k: skey; cert_id(cert(i, p, k)) = i.
+reduc forall i: id, p: pkey, k: skey; cert_pk(cert(i, p, k)) = p.
+reduc forall i: id, p: pkey, k: skey; cert_check(cert(i, p, k), pk(k)) = true.
+
+(* Negotiation. R's selection depends only on the offer it received. *)
+const offer_both: offer [data].
+const offer_weak: offer [data].
+const suite_strong: suite [data].
+const suite_weak: suite [data].
+reduc choose(offer_both) = suite_strong; choose(offer_weak) = suite_weak.
+reduc in_offer(suite_strong, offer_both) = true;
+      in_offer(suite_weak, offer_both) = true;
+      in_offer(suite_weak, offer_weak) = true.
+
+const empty: bitstring [data].
+const no_kr: bitstring [data].
+const no_chain: bitstring [data]. (* Not a certificate, so it fails cert_check. *)
+const key_confirm: bitstring [data].
+
+free alice: id.
+free bob: id.
+
+(* Sent under the traffic keys only to a peer that is honest in this scenario. *)
+free secret_from_i: bitstring [private].
+free secret_from_r: bitstring [private].
+
+event IFinish(id, id, offer, suite, bitstring, key, key).
+event IConfirmed(id, id, offer, suite, key, key).
+event RResponded(id, offer, suite, bitstring).
+event RAccept(id, id, offer, suite, key, key).
+event PinRefused(id, id).
+
+(* The attacker picks the peer, the offer and any cached chain, and I still has to
+   validate whatever it ends up with. *)
+let Initiator(me: id, skme: skey, chain_me: bitstring, capk: pkey, leak: bool) =
+    in(c, (expected: id, o: offer, use_cache: bool, cached: bitstring));
+    new x: exponent;
+    new rand_i: bitstring;
+    let gx = exp(g, x) in
+    (if leak then out(c, x)) | (
+    let kr = if use_cache then krh(rand_i, H(cached)) else no_kr in
+    let t1 = (rand_i, o, gx, kr) in
+    out(c, t1);
+    in(c, (s: suite, rand_r: bitstring, gy: G, sealed: bitstring));
+    if in_offer(s, o) = true then
+    let ee = exp(gy, x) in
+    let hs = extract(ee) in
+    let t2 = (t1, s, rand_r, gy) in
+    let i_hs = d_i_hs(hs, H(t2)) in
+    let r_hs = d_r_hs(hs, H(t2)) in
+    let (chain_wire: bitstring, sig_r: bitstring, mac_r: bitstring) =
+        open(sealed, tk(r_hs), (s, rand_r, gy)) in
+    (* Section 8: an empty chain is allowed only if I asked for it. *)
+    let chain_r = if chain_wire = empty then
+                      (if use_cache then cached else no_chain)
+                  else chain_wire in
+    if cert_check(chain_r, capk) = true then
+    let peer = cert_id(chain_r) in
+    if peer = expected then
+    let t3 = (t2, chain_r) in
+    if checksign(sig_r, cert_pk(chain_r), (ctx_r, H(t3))) = true then
+    let t4 = (t3, sig_r) in
+    if mac_r = hmac(fin(r_hs), H(t4)) then
+    let t5 = (t4, mac_r) in
+    let t6 = (t5, chain_me) in
+    let sig_i = sign((ctx_i, H(t6)), skme) in
+    let t7 = (t6, sig_i) in
+    let mac_i = hmac(fin(i_hs), H(t7)) in
+    let t8 = (t7, mac_i) in
+    let ms = master(hs) in
+    let i_ap = d_i_ap(ms, H(t8)) in
+    let r_ap = d_r_ap(ms, H(t8)) in
+    event IFinish(me, peer, o, s, H(t5), i_ap, r_ap);
+    out(c, aead((chain_me, sig_i, mac_i), tk(i_hs), empty));
+    (if peer = alice || peer = bob then out(c, aead(secret_from_i, tk(i_ap), empty))) | (
+    in(c, confirm: bitstring);
+    let m = open(confirm, tk(r_ap), empty) in
+    if m = key_confirm then
+    event IConfirmed(me, peer, o, s, i_ap, r_ap)
+    )).
+
+let Responder(me: id, skme: skey, chain_me: bitstring, capk: pkey, leak: bool) =
+    in(c, expected: id);
+    in(c, t1: bitstring);
+    let (rand_i: bitstring, o: offer, gx: G, kr: bitstring) = t1 in
+    new y: exponent;
+    new rand_r: bitstring;
+    let gy = exp(g, y) in
+    (if leak then out(c, y)) | (
+    let s = choose(o) in
+    let ee = exp(gx, y) in
+    let hs = extract(ee) in
+    let t2 = (t1, s, rand_r, gy) in
+    let i_hs = d_i_hs(hs, H(t2)) in
+    let r_hs = d_r_hs(hs, H(t2)) in
+    let t3 = (t2, chain_me) in
+    let sig_r = sign((ctx_r, H(t3)), skme) in
+    let t4 = (t3, sig_r) in
+    let mac_r = hmac(fin(r_hs), H(t4)) in
+    let t5 = (t4, mac_r) in
+    event RResponded(me, o, s, H(t5));
+    let chain_wire = if kr = krh(rand_i, H(chain_me)) then empty else chain_me in
+    out(c, (s, rand_r, gy, aead((chain_wire, sig_r, mac_r), tk(r_hs), (s, rand_r, gy))));
+    in(c, finish: bitstring);
+    let (chain_i: bitstring, sig_i: bitstring, mac_i: bitstring) = open(finish, tk(i_hs), empty) in
+    if cert_check(chain_i, capk) = true then
+    let peer = cert_id(chain_i) in
+    if peer = expected then
+    let t6 = (t5, chain_i) in
+    if checksign(sig_i, cert_pk(chain_i), (ctx_i, H(t6))) = true then
+    let t7 = (t6, sig_i) in
+    if mac_i = hmac(fin(i_hs), H(t7)) then
+    let t8 = (t7, mac_i) in
+    let ms = master(hs) in
+    let i_ap = d_i_ap(ms, H(t8)) in
+    let r_ap = d_r_ap(ms, H(t8)) in
+    event RAccept(peer, me, o, s, i_ap, r_ap);
+    out(c, aead(key_confirm, tk(r_ap), empty));
+    if peer = alice || peer = bob then out(c, aead(secret_from_r, tk(r_ap), empty))
+    ).
+
+(* Anyone can register any key under any name except the honest users' own. This
+   includes registering alice's public key as "mallory", which is what an identity
+   misbinding attack would need. *)
+let Registrar(skca: skey) =
+    in(c, (i: id, p: pkey));
+    if i <> alice && i <> bob then
+    out(c, cert(i, p, skca)).

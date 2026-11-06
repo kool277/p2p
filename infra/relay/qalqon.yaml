@@ -1,0 +1,10 @@
+name: relay
+kind: infra
+language: rust
+delivery: rust
+targets: [linux-x64]
+depends_on: [core/qalqon-sdk]
+toolchain: { cargo: ">=1.85" }
+build:
+  - cargo build -q -p qalqon-relay
+owners: [core-team]

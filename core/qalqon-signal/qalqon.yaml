@@ -1,0 +1,8 @@
+name: qalqon-signal
+kind: core
+language: rust
+delivery: rust
+targets: [linux-x64]
+depends_on: [core/qalqon-core, core/qalqon-audit, core/qalqon-api]
+toolchain: { cargo: ">=1.85" }
+owners: [core-team]

@@ -1,0 +1,10 @@
+{
+  "name": "qalqon",
+  "image": "mcr.microsoft.com/devcontainers/rust:1-bookworm",
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": { "version": "22" },
+    "ghcr.io/devcontainers/features/python:1": { "version": "3.12" },
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+  },
+  "postCreateCommand": "rustup show && cargo install wasm-bindgen-cli --version 0.2.130 --locked && sudo apt-get update && sudo apt-get install -y php-cli jq && (cd tests/interop/web && npm install && npx playwright install --with-deps chromium)"
+}

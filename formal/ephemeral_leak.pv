@@ -1,0 +1,33 @@
+(* Property 5: learning a session's ephemeral secret does not let an attacker
+   impersonate that party in any other session. Every ephemeral of every session is
+   given to the attacker at once, so confidentiality of those sessions is gone, which
+   is the point: each signature covers the peer's fresh contribution, so a party's
+   identity can still only be claimed by that party, in that exact session. This is
+   why XX replaces IK. See negative_ik.pv.
+
+   What does NOT survive, and is not claimed: I's "R has finished" from KEY_CONFIRM.
+   That record is protected only by the session's symmetric keys, so whoever holds this
+   session's ephemeral can forge it. I still knows R signed this transcript. *)
+
+set reconstructTrace = false.
+
+query b: id, o: offer, s: suite, h: bitstring, k1: key, k2: key;
+    inj-event(RAccept(alice, b, o, s, k1, k2)) ==> inj-event(IFinish(alice, b, o, s, h, k1, k2)).
+query a: id, o: offer, s: suite, h: bitstring, k1: key, k2: key;
+    inj-event(IFinish(a, bob, o, s, h, k1, k2)) ==> inj-event(RResponded(bob, o, s, h)).
+
+process
+    new skca: skey;
+    new ska: skey;
+    new skb: skey;
+    let capk = pk(skca) in
+    let chain_a = cert(alice, pk(ska), skca) in
+    let chain_b = cert(bob, pk(skb), skca) in
+    out(c, (capk, pk(ska), pk(skb), chain_a, chain_b));
+    (
+        (!Initiator(alice, ska, chain_a, capk, true))
+      | (!Responder(alice, ska, chain_a, capk, true))
+      | (!Initiator(bob, skb, chain_b, capk, true))
+      | (!Responder(bob, skb, chain_b, capk, true))
+      | (!Registrar(skca))
+    )

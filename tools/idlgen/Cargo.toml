@@ -1,0 +1,15 @@
+[package]
+name = "idlgen"
+description = "Generates every language surface from core/idl/qalqon.api.yaml."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde_yaml = "0.9"
+serde_json = { workspace = true }
+cbindgen = { version = "0.29", default-features = false }
+
+[lints]
+workspace = true

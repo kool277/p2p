@@ -1,0 +1,33 @@
+(* Property 8: a leak in one epoch does not reveal any epoch whose keys have been
+   erased. S_next = upd(S), a one-way step, and later secrets are given to the
+   attacker. It also checks what the specification admits: rekeying does not recover
+   from a compromise, so a leak reveals later epochs. *)
+
+set traceDisplay = none.
+
+free c: channel.
+type key.
+fun upd(key): key.
+fun tk(key): key.
+fun aead(bitstring, key): bitstring.
+reduc forall m: bitstring, k: key; open(aead(m, k), k) = m.
+
+free msg_epoch0: bitstring [private].
+free msg_epoch1: bitstring [private].
+free msg_epoch3: bitstring [private].
+
+query attacker(msg_epoch0).
+query attacker(msg_epoch1).
+(* Expected false: later epochs follow from the leaked secret. *)
+query attacker(msg_epoch3).
+
+process
+    new s0: key;
+    let s1 = upd(s0) in
+    let s2 = upd(s1) in
+    let s3 = upd(s2) in
+    out(c, aead(msg_epoch0, tk(s0)));
+    out(c, aead(msg_epoch1, tk(s1)));
+    out(c, aead(msg_epoch3, tk(s3)));
+    (* The leak: epoch 2's secret. Epochs 0 and 1 are already erased. *)
+    out(c, s2)

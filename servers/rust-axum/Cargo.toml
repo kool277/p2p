@@ -1,0 +1,19 @@
+[package]
+name = "qalqon-axum"
+description = "The reference host. Every other host must match its observable behaviour in the interop suite."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+qalqon-sdk = { workspace = true }
+serde_json = { workspace = true }
+axum = { version = "0.8", features = ["ws"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync", "time", "signal"] }
+futures-util = "0.3"
+rusqlite = { version = "0.37", features = ["bundled"] }
+hex = "0.4"
+
+[lints]
+workspace = true
