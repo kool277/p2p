@@ -22,7 +22,7 @@ Phases follow §7 of the build prompt, which is fuller than the Roadmap section 
 
 ## Which combinations have passed an interop run
 
-All on the test-only provider, on Linux x64, on one machine, on loopback. Each run: a fresh host and relay, two enrolled devices, a channel that prefers a direct path, a relay-forced channel, 1,000 records with a rekey, and the host's audit chain. `cargo qalqon test --primary` repeats these.
+All on the test-only provider, on Linux x64, on one machine, on loopback. Each run: a fresh host and relay, two enrolled devices, a channel that prefers a direct path, a relay-forced channel, 1,000 records with a rekey, and the host's audit chain. `cargo qalqon test --primary` repeats every row except the last.
 
 | Client | Peer | Server | Path when direct is preferred |
 | --- | --- | --- | --- |
@@ -31,7 +31,7 @@ All on the test-only provider, on Linux x64, on one machine, on loopback. Each r
 | `php-cli`, through `qalqond` | `cli-rust` | `rust-axum` | Direct (TCP) |
 | `web-react`, in headless Chromium | `cli-rust` | `rust-axum` | Relayed, because native clients do not speak WebRTC yet |
 | `web-react` | `cli-c` | `rust-axum` | Relayed, same reason |
-| `web-react` | `web-react` | `rust-axum` | Direct (WebRTC) |
+| `web-react` | `web-react` | `rust-axum` | Direct (WebRTC). Run once by hand with 200 records, not 1,000. Not in `--primary` or on pull requests |
 
 The shared vectors pass in C and C++, PHP, shell, the browser's WebAssembly, and scaffolded Python through both the C ABI and the sidecar. `tests/phase1-gate.sh` runs two separate processes over TCP and UDP, including with 10% loss.
 
@@ -47,6 +47,7 @@ GitHub Actions repeats the primary pairs, the vectors and the checks on a clean 
 4. **No TLS on the reference host.** It needs a terminating proxy, and clients refuse `ws://` except on loopback, so `wss://` has not had an interop run.
 5. **MFA is not implemented,** and neither are confidentiality labels, the binary integrity check, `qalqon-selftest`, `tools/natsim`, platform key stores, reconnecting after losing the control plane, or WASI.
 6. **Not run yet:** Miri and the 90% coverage target. Each fuzz target has had three minutes, against §8's one hour. The Ruby and Elixir sidecar clients are generated but have never run. `bindings/c/CMakeLists.txt` has never run, because CMake is not on this machine. Windows, macOS, iOS and Android have never been built.
+7. **Written but never run:** `cargo qalqon dev` and `tests/interop/dev.sh`, `cargo qalqon package`, the `justfile` (`just` is not on this machine), the Dockerfiles, compose file and devcontainer, the coturn config, the nightly and release workflows, `qalqond serve --tcp` and `qalqond call` end to end, a native `ExternalTransport`, and `createServerCore` through the C ABI or the sidecar (only the Rust host uses it).
 
 ## Decisions still open
 

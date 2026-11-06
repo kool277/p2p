@@ -4,7 +4,7 @@
 
 ## Reporting a problem
 
-Please do not open a public issue for a vulnerability. Use [GitHub's private vulnerability reporting](https://github.com/kool277/p2p/security/advisories/new) for this repository.
+Please do not open a public issue for a vulnerability. GitHub's private vulnerability reporting is not switched on for this repository yet, so there is no private channel here until the owner enables it.
 
 ## What keeps a test build out of production
 

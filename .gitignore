@@ -35,3 +35,4 @@ clients/web-react/dist/
 tools/fuzz/corpus/
 tools/fuzz/artifacts/
 tools/fuzz/coverage/
+libs/
